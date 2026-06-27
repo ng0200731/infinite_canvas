@@ -4,15 +4,19 @@ import { type NodeProps } from "@xyflow/react";
 
 import { NODE_PORT_COLORS } from "@/lib/nodes/ports";
 import type { GroupCanvasNode } from "@/lib/nodes/types";
-import { useCanvasActions } from "../canvas-context";
+import { useCanvasActions, useConnectionHighlight } from "../canvas-context";
 import { NodeDeleteButton } from "./delete-button";
 import { InputPort, OutputPort } from "./port";
 
 export function GroupNode({ id, data }: NodeProps<GroupCanvasNode>) {
   const { updateNodeData } = useCanvasActions();
+  const highlight = useConnectionHighlight(id);
 
   return (
-    <div className="group border-border bg-muted/20 relative h-48 w-80 rounded-lg border-2 border-dashed p-2">
+    <div
+      style={highlight}
+      className="group border-border bg-muted/20 relative h-48 w-80 rounded-lg border-2 border-dashed p-2"
+    >
       <NodeDeleteButton id={id} />
       <InputPort color={NODE_PORT_COLORS.group} />
       <input

@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { isFalConfigured } from "@/lib/env";
 import { NODE_PORT_COLORS } from "@/lib/nodes/ports";
 import type { GenerateCanvasNode } from "@/lib/nodes/types";
-import { useCanvasActions } from "../canvas-context";
+import { useCanvasActions, useConnectionHighlight } from "../canvas-context";
 import { NodeDeleteButton } from "./delete-button";
 import { InputPort, OutputPort } from "./port";
 
@@ -20,6 +20,7 @@ const MODELS = [
 
 export function GenerateNode({ id, data }: NodeProps<GenerateCanvasNode>) {
   const { updateNodeData, spawnImageNode } = useCanvasActions();
+  const highlight = useConnectionHighlight(id);
   const [loading, setLoading] = useState(false);
 
   const model = data.model === "flux-kontext" ? "flux-kontext" : "flux";
@@ -70,7 +71,10 @@ export function GenerateNode({ id, data }: NodeProps<GenerateCanvasNode>) {
   }
 
   return (
-    <div className="group bg-card relative flex w-72 flex-col gap-2 rounded-md border p-3 shadow-sm">
+    <div
+      style={highlight}
+      className="group bg-card relative flex w-72 flex-col gap-2 rounded-md border p-3 shadow-sm"
+    >
       <NodeDeleteButton id={id} />
       <InputPort color={NODE_PORT_COLORS.generate} />
       <div className="flex items-center gap-2 text-sm font-medium">

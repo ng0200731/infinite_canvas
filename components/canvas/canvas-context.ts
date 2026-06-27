@@ -1,6 +1,8 @@
 "use client";
 
-import { createContext, useContext } from "react";
+import { createContext, useContext, type CSSProperties } from "react";
+
+import { DEFAULT_EDGE_COLOR } from "@/lib/nodes/ports";
 
 export interface CanvasActions {
   /** Patch a node's data object (shallow merge). */
@@ -21,4 +23,40 @@ export function useCanvasActions(): CanvasActions {
     throw new Error("useCanvasActions must be used within CanvasActionsContext");
   }
   return ctx;
+}
+
+/**
+ * Live connection-in-progress state. The source node (where the drag started)
+ * and the node currently under the cursor (the drop target) are both
+ * highlighted so the user can see where a wire is coming from and where it will
+ * land. Kept in its own context (separate from {@link CanvasActionsContext}) so
+ * action-only consumers don't re-render while a drag is in flight.
+ */
+export interface ConnectionHighlight {
+  sourceId: string | null;
+  targetId: string | null;
+  /** Color shared by the in-progress wire and both rings — the source node's type color. */
+  color: string;
+}
+
+export const ConnectionHighlightContext = createContext<ConnectionHighlight>({
+  sourceId: null,
+  targetId: null,
+  color: DEFAULT_EDGE_COLOR,
+});
+
+/** ~50% alpha, appended to a 6-digit hex color to soften the ring's outer glow. */
+const RING_GLOW_ALPHA = "80";
+
+/**
+ * Returns a box-shadow ring style when `id` is the connection source or the
+ * hovered target, otherwise `undefined`. Uses box-shadow (not border) so the
+ * node's layout never shifts while it is highlighted.
+ */
+export function useConnectionHighlight(id: string): CSSProperties | undefined {
+  const { sourceId, targetId, color } = useContext(ConnectionHighlightContext);
+  if (id !== sourceId && id !== targetId) return undefined;
+  return {
+    boxShadow: `0 0 0 2px ${color}, 0 0 16px ${color}${RING_GLOW_ALPHA}`,
+  };
 }

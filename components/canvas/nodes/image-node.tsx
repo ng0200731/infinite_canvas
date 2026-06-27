@@ -8,12 +8,13 @@ import { toast } from "sonner";
 import { NODE_PORT_COLORS } from "@/lib/nodes/ports";
 import type { ImageCanvasNode } from "@/lib/nodes/types";
 import { uploadImage } from "@/lib/upload";
-import { useCanvasActions } from "../canvas-context";
+import { useCanvasActions, useConnectionHighlight } from "../canvas-context";
 import { NodeDeleteButton } from "./delete-button";
 import { InputPort, OutputPort } from "./port";
 
 export function ImageNode({ id, data }: NodeProps<ImageCanvasNode>) {
   const { updateNodeData } = useCanvasActions();
+  const highlight = useConnectionHighlight(id);
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
 
@@ -31,7 +32,10 @@ export function ImageNode({ id, data }: NodeProps<ImageCanvasNode>) {
   }
 
   return (
-    <div className="group bg-card relative flex h-40 w-56 flex-col overflow-hidden rounded-md border shadow-sm">
+    <div
+      style={highlight}
+      className="group bg-card relative flex h-40 w-56 flex-col overflow-hidden rounded-md border shadow-sm"
+    >
       <NodeDeleteButton id={id} />
       <InputPort color={NODE_PORT_COLORS.image} />
       <div

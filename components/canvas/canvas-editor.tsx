@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, type DragEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import Link from "next/link";
 import {
   Background,
@@ -18,6 +18,7 @@ import {
   type Connection,
   type EdgeTypes,
   type NodeTypes,
+  type OnConnectStartParams,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { ChevronLeft } from "lucide-react";
@@ -29,7 +30,7 @@ import { getCanvasStore } from "@/lib/store";
 import { createNode } from "@/lib/nodes/registry";
 import { colorForNodeType, DEFAULT_EDGE_COLOR, EDGE_WIDTH } from "@/lib/nodes/ports";
 import type { CanvasContent, CanvasEdge, CanvasNode, NodeType } from "@/lib/nodes/types";
-import { CanvasActionsContext } from "./canvas-context";
+import { CanvasActionsContext, ConnectionHighlightContext } from "./canvas-context";
 import { NodePalette } from "./node-palette";
 import { DeletableEdge } from "./edges/canvas-edge";
 import { GenerateNode } from "./nodes/generate-node";
@@ -46,6 +47,17 @@ function Editor({ projectId, canvasId }: { projectId: string; canvasId: string }
   const loadedRef = useRef(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { screenToFlowPosition, getNodes } = useReactFlow();
+
+  // Live connection drag: which node the wire started from (source highlight)
+  // and which node the pointer is currently hovering over (target highlight).
+  const [connectionSourceId, setConnectionSourceId] = useState<string | null>(null);
+  const [connectionTargetId, setConnectionTargetId] = useState<string | null>(null);
+
+  // ComfyUI style: the in-progress wire and both highlight rings share the
+  // source node's type color.
+  const connectionColor = connectionSourceId
+    ? colorForNodeType(nodes.find((n) => n.id === connectionSourceId)?.type)
+    : DEFAULT_EDGE_COLOR;
 
   // Load the canvas content once it arrives.
   useEffect(() => {
@@ -96,6 +108,45 @@ function Editor({ projectId, canvasId }: { projectId: string; canvasId: string }
       );
     },
     [setEdges, getNodes],
+  );
+
+  const onConnectStart = useCallback(
+    (_event: MouseEvent | TouchEvent, { nodeId }: OnConnectStartParams) => {
+      // Light up the node the wire is coming from; clear any stale target.
+      setConnectionSourceId(nodeId);
+      setConnectionTargetId(null);
+    },
+    [],
+  );
+
+  const onConnectEnd = useCallback(() => {
+    setConnectionSourceId(null);
+    setConnectionTargetId(null);
+  }, []);
+
+  // While dragging a wire, highlight whichever node the pointer is over so the
+  // user can see the would-be target. Hit-tests the DOM directly so it tracks
+  // exactly what's on screen regardless of zoom, pan, or node origin. Only the
+  // latest hovered node is stored, and state is written only on change to keep
+  // the drag cheap.
+  useEffect(() => {
+    if (!connectionSourceId) return;
+    const handlePointerMove = (event: PointerEvent) => {
+      const element = document.elementFromPoint(event.clientX, event.clientY);
+      const nodeEl = element?.closest<HTMLElement>(".react-flow__node");
+      const hitId = nodeEl?.getAttribute("data-id") ?? null;
+      setConnectionTargetId((prev) => {
+        const next = hitId && hitId !== connectionSourceId ? hitId : null;
+        return prev === next ? prev : next;
+      });
+    };
+    window.addEventListener("pointermove", handlePointerMove);
+    return () => window.removeEventListener("pointermove", handlePointerMove);
+  }, [connectionSourceId]);
+
+  const connectionHighlight = useMemo(
+    () => ({ sourceId: connectionSourceId, targetId: connectionTargetId, color: connectionColor }),
+    [connectionSourceId, connectionTargetId, connectionColor],
   );
 
   const spawnImageNode = useCallback(
@@ -208,7 +259,8 @@ function Editor({ projectId, canvasId }: { projectId: string; canvasId: string }
       <div className="flex min-h-0 flex-1">
         <CanvasActionsContext.Provider value={actions}>
           <NodePalette onAdd={addNodeAtCenter} />
-          <div className="relative flex-1" onDrop={onDrop} onDragOver={(e) => e.preventDefault()}>
+          <ConnectionHighlightContext.Provider value={connectionHighlight}>
+            <div className="relative flex-1" onDrop={onDrop} onDragOver={(e) => e.preventDefault()}>
             {isLoading || !canvas ? (
               <div className="text-muted-foreground flex h-full items-center justify-center text-sm">
                 Loading canvas…
@@ -220,13 +272,15 @@ function Editor({ projectId, canvasId }: { projectId: string; canvasId: string }
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
                 onConnect={onConnect}
+                onConnectStart={onConnectStart}
+                onConnectEnd={onConnectEnd}
                 nodeTypes={nodeTypes}
                 edgeTypes={edgeTypes}
                 nodeOrigin={[0.5, 0.5]}
-                connectionMode={ConnectionMode.Loose}
+                connectionMode={ConnectionMode.Strict}
                 connectionLineType={ConnectionLineType.Bezier}
                 connectionLineStyle={{
-                  stroke: DEFAULT_EDGE_COLOR,
+                  stroke: connectionColor,
                   strokeWidth: EDGE_WIDTH,
                 }}
                 defaultEdgeOptions={defaultEdgeOptions}
@@ -239,7 +293,8 @@ function Editor({ projectId, canvasId }: { projectId: string; canvasId: string }
                 <MiniMap pannable zoomable />
               </ReactFlow>
             )}
-          </div>
+            </div>
+          </ConnectionHighlightContext.Provider>
         </CanvasActionsContext.Provider>
       </div>
     </div>
