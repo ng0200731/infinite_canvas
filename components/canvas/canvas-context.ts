@@ -35,13 +35,16 @@ export function useCanvasActions(): CanvasActions {
 export interface ConnectionHighlight {
   sourceId: string | null;
   targetId: string | null;
-  /** Color shared by the in-progress wire and both rings — the source node's type color. */
+  /** Which dot on the hovered target node the pointer is over ("left" | "right" | null). */
+  targetDot: "left" | "right" | null;
+  /** Color shared by the in-progress wire and all highlight rings — the source node's type color. */
   color: string;
 }
 
 export const ConnectionHighlightContext = createContext<ConnectionHighlight>({
   sourceId: null,
   targetId: null,
+  targetDot: null,
   color: DEFAULT_EDGE_COLOR,
 });
 

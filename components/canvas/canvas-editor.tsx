@@ -49,9 +49,10 @@ function Editor({ projectId, canvasId }: { projectId: string; canvasId: string }
   const { screenToFlowPosition, getNodes } = useReactFlow();
 
   // Live connection drag: which node the wire started from (source highlight)
-  // and which node the pointer is currently hovering over (target highlight).
+  // and which node + dot the pointer is currently hovering over (target highlight).
   const [connectionSourceId, setConnectionSourceId] = useState<string | null>(null);
   const [connectionTargetId, setConnectionTargetId] = useState<string | null>(null);
+  const [connectionTargetDot, setConnectionTargetDot] = useState<"left" | "right" | null>(null);
 
   // ComfyUI style: the in-progress wire and both highlight rings share the
   // source node's type color.
@@ -65,7 +66,17 @@ function Editor({ projectId, canvasId }: { projectId: string; canvasId: string }
       loadedRef.current = true;
       setNodes(canvas.content.nodes);
       // Force the custom (deletable) edge type so the remove button renders.
-      setEdges(canvas.content.edges.map((e) => ({ ...e, type: "deletable" })));
+      // Older edges were saved before dots had explicit ids — backfill
+      // sourceHandle/targetHandle (right=source, left=target under the old
+      // model) so they keep attaching instead of going limp.
+      setEdges(
+        canvas.content.edges.map((e) => ({
+          ...e,
+          type: "deletable",
+          sourceHandle: e.sourceHandle ?? "right",
+          targetHandle: e.targetHandle ?? "left",
+        })),
+      );
     }
   }, [canvas, setNodes, setEdges]);
 
@@ -112,9 +123,10 @@ function Editor({ projectId, canvasId }: { projectId: string; canvasId: string }
 
   const onConnectStart = useCallback(
     (_event: MouseEvent | TouchEvent, { nodeId }: OnConnectStartParams) => {
-      // Light up the node the wire is coming from; clear any stale target.
+      // Light up the node the wire is coming from (both its dots); clear stale target.
       setConnectionSourceId(nodeId);
       setConnectionTargetId(null);
+      setConnectionTargetDot(null);
     },
     [],
   );
@@ -122,31 +134,39 @@ function Editor({ projectId, canvasId }: { projectId: string; canvasId: string }
   const onConnectEnd = useCallback(() => {
     setConnectionSourceId(null);
     setConnectionTargetId(null);
+    setConnectionTargetDot(null);
   }, []);
 
-  // While dragging a wire, highlight whichever node the pointer is over so the
-  // user can see the would-be target. Hit-tests the DOM directly so it tracks
-  // exactly what's on screen regardless of zoom, pan, or node origin. Only the
-  // latest hovered node is stored, and state is written only on change to keep
-  // the drag cheap.
+  // While dragging a wire, highlight whichever node the pointer is over (node
+  // ring) and, when it's over a specific dot, that dot too. Loose mode lets any
+  // dot connect to any dot, so we report the hovered dot's side directly. Hit-
+  // tests the DOM so it tracks exactly what's on screen regardless of zoom/pan.
   useEffect(() => {
     if (!connectionSourceId) return;
     const handlePointerMove = (event: PointerEvent) => {
       const element = document.elementFromPoint(event.clientX, event.clientY);
       const nodeEl = element?.closest<HTMLElement>(".react-flow__node");
-      const hitId = nodeEl?.getAttribute("data-id") ?? null;
-      setConnectionTargetId((prev) => {
-        const next = hitId && hitId !== connectionSourceId ? hitId : null;
-        return prev === next ? prev : next;
-      });
+      const handleEl = element?.closest<HTMLElement>(".react-flow__handle");
+      const nodeId = nodeEl?.getAttribute("data-id") ?? null;
+      const handlePos = handleEl?.getAttribute("data-handlepos");
+      const targetId = nodeId && nodeId !== connectionSourceId ? nodeId : null;
+      const dot: "left" | "right" | null =
+        targetId && (handlePos === "left" || handlePos === "right") ? handlePos : null;
+      setConnectionTargetId((prev) => (prev === targetId ? prev : targetId));
+      setConnectionTargetDot((prev) => (prev === dot ? prev : dot));
     };
     window.addEventListener("pointermove", handlePointerMove);
     return () => window.removeEventListener("pointermove", handlePointerMove);
   }, [connectionSourceId]);
 
   const connectionHighlight = useMemo(
-    () => ({ sourceId: connectionSourceId, targetId: connectionTargetId, color: connectionColor }),
-    [connectionSourceId, connectionTargetId, connectionColor],
+    () => ({
+      sourceId: connectionSourceId,
+      targetId: connectionTargetId,
+      targetDot: connectionTargetDot,
+      color: connectionColor,
+    }),
+    [connectionSourceId, connectionTargetId, connectionTargetDot, connectionColor],
   );
 
   const spawnImageNode = useCallback(
@@ -277,7 +297,7 @@ function Editor({ projectId, canvasId }: { projectId: string; canvasId: string }
                 nodeTypes={nodeTypes}
                 edgeTypes={edgeTypes}
                 nodeOrigin={[0.5, 0.5]}
-                connectionMode={ConnectionMode.Strict}
+                connectionMode={ConnectionMode.Loose}
                 connectionLineType={ConnectionLineType.Bezier}
                 connectionLineStyle={{
                   stroke: connectionColor,
