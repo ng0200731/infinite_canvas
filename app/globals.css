@@ -151,6 +151,29 @@
   background: color-mix(in oklch, var(--card), transparent 4%);
 }
 
+.react-flow__edge-path {
+  transition:
+    stroke 140ms ease,
+    stroke-width 140ms ease,
+    opacity 140ms ease;
+}
+
+.react-flow__node {
+  transition:
+    filter 140ms ease,
+    opacity 140ms ease;
+}
+
+.react-flow__node.canvas-node-highlight {
+  z-index: 10 !important;
+  filter: drop-shadow(0 12px 18px color-mix(in oklch, var(--ring), transparent 72%));
+}
+
+.react-flow__node.canvas-node-highlight > * {
+  outline: 2px solid color-mix(in oklch, var(--ring), transparent 18%);
+  outline-offset: 3px;
+}
+
 /* Placeholder for the note node's rich-text editor (contentEditable). */
 [contenteditable][data-placeholder]:empty:before {
   content: attr(data-placeholder);

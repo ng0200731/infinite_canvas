@@ -68,6 +68,10 @@ function hasImageUrl(reference: ConnectedInputReference): reference is Connected
   return reference.kind === "image" && typeof reference.imageUrl === "string";
 }
 
+function isAutocompleteControlKey(key: string) {
+  return key === "ArrowDown" || key === "ArrowUp" || key === "Tab" || key === "Enter";
+}
+
 export function GenerateNode({ id, data, parentId, selected }: NodeProps<GenerateCanvasNode>) {
   const {
     updateNodeData,
@@ -82,6 +86,8 @@ export function GenerateNode({ id, data, parentId, selected }: NodeProps<Generat
   const previewRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(false);
   const [mention, setMention] = useState<MentionState | null>(null);
+  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(0);
+  const [promptDraft, setPromptDraft] = useState(data.prompt);
   const width = data.width ?? DEFAULT_WIDTH;
   const height = data.height ?? DEFAULT_HEIGHT;
 
@@ -109,6 +115,7 @@ export function GenerateNode({ id, data, parentId, selected }: NodeProps<Generat
     : [];
 
   const firstMentionSuggestion = mentionSuggestions[0];
+  const activeMentionSuggestion = mentionSuggestions[activeSuggestionIndex] ?? firstMentionSuggestion;
 
   const renderedReferences = connectedReferences.map((reference) => {
     if (reference.kind === "pantone") {
@@ -155,16 +162,20 @@ export function GenerateNode({ id, data, parentId, selected }: NodeProps<Generat
   }
 
   function updatePrompt(value: string, caret: number | null) {
+    setPromptDraft(value);
     updateNodeData(id, { prompt: value });
     setMention(caret === null ? null : mentionAtCaret(value, caret));
+    setActiveSuggestionIndex(0);
   }
 
   function insertAlias(alias: string) {
     if (!mention) return;
-    const nextPrompt = `${data.prompt.slice(0, mention.start)}@${alias} ${data.prompt.slice(
+    const currentPrompt = textareaRef.current?.value ?? promptDraft;
+    const nextPrompt = `${currentPrompt.slice(0, mention.start)}@${alias} ${currentPrompt.slice(
       mention.end,
     )}`;
     const nextCaret = mention.start + alias.length + 2;
+    setPromptDraft(nextPrompt);
     updateNodeData(id, { prompt: nextPrompt });
     setMention(null);
     window.requestAnimationFrame(() => {
@@ -174,9 +185,25 @@ export function GenerateNode({ id, data, parentId, selected }: NodeProps<Generat
   }
 
   function handlePromptKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key !== "Tab" || !mention || !firstMentionSuggestion) return;
+    if (!mention || mentionSuggestions.length === 0) return;
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setActiveSuggestionIndex((index) => (index + 1) % mentionSuggestions.length);
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setActiveSuggestionIndex(
+        (index) => (index - 1 + mentionSuggestions.length) % mentionSuggestions.length,
+      );
+      return;
+    }
+
+    if (event.key !== "Tab" && event.key !== "Enter") return;
     event.preventDefault();
-    insertAlias(firstMentionSuggestion.alias);
+    insertAlias(activeMentionSuggestion.alias);
   }
 
   function handlePromptScroll(event: ReactUIEvent<HTMLTextAreaElement>) {
@@ -185,7 +212,7 @@ export function GenerateNode({ id, data, parentId, selected }: NodeProps<Generat
   }
 
   async function onGenerate() {
-    const prompt = data.prompt.trim();
+    const prompt = promptDraft.trim();
     if (!prompt) {
       toast.error("Enter a prompt first");
       return;
@@ -292,40 +319,46 @@ export function GenerateNode({ id, data, parentId, selected }: NodeProps<Generat
       <div className="focus-within:border-ring focus-within:ring-ring/30 bg-background/60 relative rounded-md border focus-within:ring-2">
         <div
           ref={previewRef}
-          className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words p-2 text-sm leading-5"
+          className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words p-2 text-sm leading-5 font-semibold"
           aria-hidden="true"
         >
-          <PromptPreview value={data.prompt} />
+          <PromptPreview value={promptDraft} />
         </div>
         <textarea
           ref={textareaRef}
           rows={4}
           placeholder="Describe the image..."
-          value={data.prompt}
+          value={promptDraft}
           onChange={(event) => updatePrompt(event.target.value, event.target.selectionStart)}
           onClick={(event) =>
             updatePrompt(event.currentTarget.value, event.currentTarget.selectionStart)
           }
-          onKeyUp={(event) =>
-            updatePrompt(event.currentTarget.value, event.currentTarget.selectionStart)
-          }
+          onKeyUp={(event) => {
+            if (mention && isAutocompleteControlKey(event.key)) return;
+            updatePrompt(event.currentTarget.value, event.currentTarget.selectionStart);
+          }}
           onKeyDown={handlePromptKeyDown}
           onScroll={handlePromptScroll}
           onBlur={() => window.setTimeout(() => setMention(null), 120)}
-          className="nodrag caret-foreground relative z-10 block w-full resize-none overflow-y-auto rounded-md border border-transparent bg-transparent p-2 text-sm leading-5 text-transparent outline-none placeholder:text-transparent"
+          className="nodrag caret-foreground relative z-10 block w-full resize-none overflow-y-auto rounded-md border border-transparent bg-transparent p-2 text-sm leading-5 font-semibold text-transparent outline-none placeholder:text-transparent"
         />
         {mention && connectedReferences.length > 0 && (
-          <div className="bg-popover text-popover-foreground absolute right-0 left-0 z-20 mt-1 max-h-32 overflow-y-auto rounded-md border p-1 shadow-md">
+          <div className="nodrag nopan bg-popover text-popover-foreground absolute right-0 left-0 z-20 mt-1 max-h-32 overflow-y-auto rounded-md border p-1 shadow-md">
             {mentionSuggestions.length > 0 ? (
-              mentionSuggestions.map((reference) => (
+              mentionSuggestions.map((reference, index) => (
                 <button
                   key={reference.nodeId}
                   type="button"
-                  onMouseDown={(event) => {
+                  onPointerDown={(event) => {
                     event.preventDefault();
+                    event.stopPropagation();
                     insertAlias(reference.alias);
                   }}
-                  className="hover:bg-accent focus-visible:ring-ring flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs outline-none focus-visible:ring-2"
+                  onMouseEnter={() => setActiveSuggestionIndex(index)}
+                  className={cn(
+                    "nodrag nopan focus-visible:ring-ring flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs outline-none focus-visible:ring-2",
+                    index === activeSuggestionIndex ? "bg-accent" : "hover:bg-accent",
+                  )}
                 >
                   {reference.kind === "pantone" ? (
                     <span

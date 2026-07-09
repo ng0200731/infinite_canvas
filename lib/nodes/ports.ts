@@ -1,9 +1,6 @@
 import type { NodeType } from "./types";
 
-/**
- * ComfyUI-style color per node type. Shared by the input/output ports and the
- * link wires so a wire matches its source port's color.
- */
+/** ComfyUI-style color per node type. Shared by the input/output ports. */
 export const NODE_PORT_COLORS: Record<NodeType, string> = {
   note: "#f59e0b", // amber
   image: "#10b981", // green
@@ -16,11 +13,17 @@ export const NODE_PORT_COLORS: Record<NodeType, string> = {
   pantone: "#f97316", // orange
 };
 
-/** Fallback color for wires whose source type is unknown. */
-export const DEFAULT_EDGE_COLOR = "#6366f1"; // indigo
+/** Default connection wire color. */
+export const DEFAULT_EDGE_COLOR = "#94a3b8"; // slate
 
 /** Stroke width for link wires. */
-export const EDGE_WIDTH = 2.5;
+export const EDGE_WIDTH = 1.25;
+
+/** Hover/focus color for the active relationship between nodes. */
+export const HIGHLIGHT_EDGE_COLOR = "#0f766e"; // teal
+
+/** Stroke width for the active relationship between nodes. */
+export const HIGHLIGHT_EDGE_WIDTH = 3;
 
 export function colorForNodeType(type: string | undefined): string {
   if (!type) return DEFAULT_EDGE_COLOR;

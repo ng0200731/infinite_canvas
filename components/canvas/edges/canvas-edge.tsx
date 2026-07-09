@@ -31,7 +31,7 @@ export function DeletableEdge({
 
   return (
     <>
-      <BaseEdge id={id} path={edgePath} style={style} />
+      <BaseEdge id={id} path={edgePath} style={style} interactionWidth={18} />
       <EdgeLabelRenderer>
         <button
           type="button"

@@ -52,8 +52,15 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useCanvas } from "@/lib/hooks/use-canvas";
 import { getCanvasStore } from "@/lib/store";
 import { createNode } from "@/lib/nodes/registry";
-import { colorForNodeType, DEFAULT_EDGE_COLOR, EDGE_WIDTH } from "@/lib/nodes/ports";
+import {
+  colorForNodeType,
+  DEFAULT_EDGE_COLOR,
+  EDGE_WIDTH,
+  HIGHLIGHT_EDGE_COLOR,
+  HIGHLIGHT_EDGE_WIDTH,
+} from "@/lib/nodes/ports";
 import type { CanvasContent, CanvasEdge, CanvasNode, NodeType } from "@/lib/nodes/types";
+import { cn } from "@/lib/utils";
 import {
   CanvasActionsContext,
   ConnectionHighlightContext,
@@ -75,6 +82,11 @@ const AUTOSAVE_DEBOUNCE_MS = 600;
 const NEW_NODE_DISPLACEMENT = 32;
 const POSITION_EPSILON = 1;
 const MAX_PLACEMENT_PROBES = 40;
+
+type HoverTarget = {
+  kind: "node" | "edge";
+  id: string;
+} | null;
 
 /**
  * Reorder so each parent appears before its children. React Flow paints nodes in
@@ -211,12 +223,10 @@ function findConnectedInputReferences(
         typeof node.data.hex === "string" && node.data.hex.startsWith("#") ? node.data.hex : null;
       if (!swatchHex) continue;
 
-      const name = typeof node.data.name === "string" && node.data.name.trim()
-        ? node.data.name.trim()
-        : null;
-      const code = typeof node.data.code === "string" && node.data.code.trim()
-        ? node.data.code.trim()
-        : null;
+      const name =
+        typeof node.data.name === "string" && node.data.name.trim() ? node.data.name.trim() : null;
+      const code =
+        typeof node.data.code === "string" && node.data.code.trim() ? node.data.code.trim() : null;
       const alias = name ?? code ?? "pantone";
       const label = name
         ? name
@@ -274,6 +284,7 @@ function Editor({
   const [connectionSourceId, setConnectionSourceId] = useState<string | null>(null);
   const [connectionTargetId, setConnectionTargetId] = useState<string | null>(null);
   const [connectionTargetDot, setConnectionTargetDot] = useState<"left" | "right" | null>(null);
+  const [hoverTarget, setHoverTarget] = useState<HoverTarget>(null);
 
   // ComfyUI style: the in-progress wire and both highlight rings share the
   // source node's type color.
@@ -296,6 +307,7 @@ function Editor({
           type: "deletable",
           sourceHandle: e.sourceHandle ?? "right",
           targetHandle: e.targetHandle ?? "left",
+          style: { ...e.style, stroke: DEFAULT_EDGE_COLOR, strokeWidth: EDGE_WIDTH },
         })),
       );
     }
@@ -367,15 +379,12 @@ function Editor({
 
   const onConnect = useCallback(
     (connection: Connection) => {
-      // ComfyUI-style: color the wire to match its source port's node type.
-      const source = getNodes().find((n) => n.id === connection.source);
-      const color = colorForNodeType(source?.type);
       setEdges((eds) =>
         addEdge(
           {
             ...connection,
             type: "deletable",
-            style: { stroke: color, strokeWidth: EDGE_WIDTH },
+            style: { stroke: DEFAULT_EDGE_COLOR, strokeWidth: EDGE_WIDTH },
           },
           eds,
         ),
@@ -384,7 +393,7 @@ function Editor({
       setConnectedNotice(true);
       connectedNoticeTimer.current = setTimeout(() => setConnectedNotice(false), 3000);
     },
-    [setEdges, getNodes],
+    [setEdges],
   );
 
   const onConnectStart = useCallback(
@@ -685,7 +694,69 @@ function Editor({
     [],
   );
 
-  // Smooth bezier links, color-matched to the source port (ComfyUI style).
+  const hoveredGraph = useMemo(() => {
+    const nodeIds = new Set<string>();
+    const edgeIds = new Set<string>();
+
+    if (!hoverTarget) return { nodeIds, edgeIds };
+
+    if (hoverTarget.kind === "edge") {
+      const edge = edges.find((candidate) => candidate.id === hoverTarget.id);
+      if (!edge) return { nodeIds, edgeIds };
+
+      edgeIds.add(edge.id);
+      nodeIds.add(edge.source);
+      nodeIds.add(edge.target);
+      return { nodeIds, edgeIds };
+    }
+
+    nodeIds.add(hoverTarget.id);
+    for (const edge of edges) {
+      if (edge.source !== hoverTarget.id && edge.target !== hoverTarget.id) continue;
+      edgeIds.add(edge.id);
+      nodeIds.add(edge.source);
+      nodeIds.add(edge.target);
+    }
+
+    return { nodeIds, edgeIds };
+  }, [edges, hoverTarget]);
+
+  const renderedNodes = useMemo<CanvasNode[]>(
+    () =>
+      nodes.map((node) => ({
+        ...node,
+        className: cn(node.className, hoveredGraph.nodeIds.has(node.id) && "canvas-node-highlight"),
+      })),
+    [hoveredGraph.nodeIds, nodes],
+  );
+
+  const renderedEdges = useMemo<CanvasEdge[]>(
+    () =>
+      edges.map((edge) => {
+        const isHighlighted = hoveredGraph.edgeIds.has(edge.id);
+        return {
+          ...edge,
+          style: {
+            ...edge.style,
+            stroke: isHighlighted ? HIGHLIGHT_EDGE_COLOR : DEFAULT_EDGE_COLOR,
+            strokeWidth: isHighlighted ? HIGHLIGHT_EDGE_WIDTH : EDGE_WIDTH,
+          },
+        };
+      }),
+    [edges, hoveredGraph.edgeIds],
+  );
+
+  const clearHoverTarget = useCallback(() => setHoverTarget(null), []);
+
+  const onNodeMouseEnter = useCallback((_event: React.MouseEvent, node: CanvasNode) => {
+    setHoverTarget({ kind: "node", id: node.id });
+  }, []);
+
+  const onEdgeMouseEnter = useCallback((_event: React.MouseEvent, edge: CanvasEdge) => {
+    setHoverTarget({ kind: "edge", id: edge.id });
+  }, []);
+
+  // Smooth bezier links, quiet by default and highlighted on hover.
   const defaultEdgeOptions = useMemo(
     () => ({
       type: "deletable" as const,
@@ -830,13 +901,17 @@ function Editor({
                 </div>
               ) : (
                 <ReactFlow
-                  nodes={nodes}
-                  edges={edges}
+                  nodes={renderedNodes}
+                  edges={renderedEdges}
                   onNodesChange={handleNodesChange}
                   onEdgesChange={onEdgesChange}
                   onConnect={onConnect}
                   onConnectStart={onConnectStart}
                   onConnectEnd={onConnectEnd}
+                  onNodeMouseEnter={onNodeMouseEnter}
+                  onNodeMouseLeave={clearHoverTarget}
+                  onEdgeMouseEnter={onEdgeMouseEnter}
+                  onEdgeMouseLeave={clearHoverTarget}
                   onNodeDragStop={onNodeDragStop}
                   nodeTypes={nodeTypes}
                   edgeTypes={edgeTypes}
