@@ -1,6 +1,11 @@
 "use client";
 
-import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import {
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type UIEvent as ReactUIEvent,
+} from "react";
 import { type NodeProps } from "@xyflow/react";
 import { Loader2, Sparkles, X } from "lucide-react";
 import { toast } from "sonner";
@@ -48,7 +53,7 @@ function PromptPreview({ value }: { value: string }) {
 
   return value.split(/(@[^\s@]+)/g).map((part, index) =>
     part.startsWith("@") ? (
-      <strong key={`${part}-${index}`} className="text-foreground font-semibold">
+      <strong key={`${part}-${index}`} className="text-foreground font-semibold underline">
         {part}
       </strong>
     ) : (
@@ -74,6 +79,7 @@ export function GenerateNode({ id, data, parentId, selected }: NodeProps<Generat
   const highlight = useConnectionHighlight(id);
   const accent = useGroupAccent(parentId);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(false);
   const [mention, setMention] = useState<MentionState | null>(null);
   const width = data.width ?? DEFAULT_WIDTH;
@@ -171,6 +177,11 @@ export function GenerateNode({ id, data, parentId, selected }: NodeProps<Generat
     if (event.key !== "Tab" || !mention || !firstMentionSuggestion) return;
     event.preventDefault();
     insertAlias(firstMentionSuggestion.alias);
+  }
+
+  function handlePromptScroll(event: ReactUIEvent<HTMLTextAreaElement>) {
+    if (!previewRef.current) return;
+    previewRef.current.scrollTop = event.currentTarget.scrollTop;
   }
 
   async function onGenerate() {
@@ -278,8 +289,12 @@ export function GenerateNode({ id, data, parentId, selected }: NodeProps<Generat
         </div>
       </div>
 
-      <div className="relative">
-        <div className="pointer-events-none absolute inset-0 whitespace-pre-wrap break-words rounded-md border border-transparent p-2 text-sm">
+      <div className="focus-within:border-ring focus-within:ring-ring/30 bg-background/60 relative rounded-md border focus-within:ring-2">
+        <div
+          ref={previewRef}
+          className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words p-2 text-sm leading-5"
+          aria-hidden="true"
+        >
           <PromptPreview value={data.prompt} />
         </div>
         <textarea
@@ -295,8 +310,9 @@ export function GenerateNode({ id, data, parentId, selected }: NodeProps<Generat
             updatePrompt(event.currentTarget.value, event.currentTarget.selectionStart)
           }
           onKeyDown={handlePromptKeyDown}
+          onScroll={handlePromptScroll}
           onBlur={() => window.setTimeout(() => setMention(null), 120)}
-          className="nodrag bg-background/60 focus-visible:border-ring focus-visible:ring-ring/30 caret-foreground placeholder:text-transparent relative w-full resize-none rounded-md border p-2 text-sm text-transparent outline-none focus-visible:ring-2"
+          className="nodrag caret-foreground relative z-10 block w-full resize-none overflow-y-auto rounded-md border border-transparent bg-transparent p-2 text-sm leading-5 text-transparent outline-none placeholder:text-transparent"
         />
         {mention && connectedReferences.length > 0 && (
           <div className="bg-popover text-popover-foreground absolute right-0 left-0 z-20 mt-1 max-h-32 overflow-y-auto rounded-md border p-1 shadow-md">

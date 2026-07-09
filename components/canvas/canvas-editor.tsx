@@ -266,6 +266,8 @@ function Editor({
   const [saveOpen, setSaveOpen] = useState(false);
   const [canvasName, setCanvasName] = useState("");
   const [saving, setSaving] = useState(false);
+  const [connectedNotice, setConnectedNotice] = useState(false);
+  const connectedNoticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Live connection drag: which node the wire started from (source highlight)
   // and which node + dot the pointer is currently hovering over (target highlight).
@@ -378,6 +380,9 @@ function Editor({
           eds,
         ),
       );
+      if (connectedNoticeTimer.current) clearTimeout(connectedNoticeTimer.current);
+      setConnectedNotice(true);
+      connectedNoticeTimer.current = setTimeout(() => setConnectedNotice(false), 3000);
     },
     [setEdges, getNodes],
   );
@@ -397,6 +402,13 @@ function Editor({
     setConnectionTargetId(null);
     setConnectionTargetDot(null);
   }, []);
+
+  useEffect(
+    () => () => {
+      if (connectedNoticeTimer.current) clearTimeout(connectedNoticeTimer.current);
+    },
+    [],
+  );
 
   // Auto-attach grouping: when a node is dropped with its center over a group,
   // parent it to that group (so it moves with the group); when dropped outside
@@ -807,6 +819,11 @@ function Editor({
           <NodePalette onAdd={addNodeAtCenter} />
           <ConnectionHighlightContext.Provider value={connectionHighlight}>
             <div className="relative flex-1" onDrop={onDrop} onDragOver={(e) => e.preventDefault()}>
+              {connectedNotice && (
+                <div className="bg-card text-foreground pointer-events-none absolute top-3 right-3 z-30 rounded-md border px-3 py-1.5 text-xs font-semibold shadow-md">
+                  connected
+                </div>
+              )}
               {isLoading || !canvas ? (
                 <div className="text-muted-foreground flex h-full items-center justify-center text-sm">
                   Loading canvas...

@@ -72,7 +72,13 @@ export function InputPort({ color }: { color: string }) {
       type="source"
       position={Position.Left}
       {...hoverProps}
-      style={{ ...BASE_STYLE, transform: "translate(0, -50%)", background: color, ...highlight }}
+      style={{
+        ...BASE_STYLE,
+        top: "2%",
+        transform: "translate(0, 0)",
+        background: color,
+        ...highlight,
+      }}
     />
   );
 }
@@ -87,7 +93,8 @@ export function OutputPort({ color }: { color: string }) {
       {...hoverProps}
       style={{
         ...BASE_STYLE,
-        transform: "translate(-100%, -50%)",
+        top: "98%",
+        transform: "translate(-100%, -100%)",
         background: color,
         ...highlight,
       }}
