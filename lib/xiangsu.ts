@@ -10,6 +10,7 @@ import type {
 import { compileReferencePrompt } from "@/lib/reference-prompt";
 
 const XIANGSU_GENERATION_URL = "https://www.xiangsuai.cn/v1/images/generations";
+const XIANGSU_EDIT_URL = "https://www.xiangsuai.cn/v1/images/edits";
 const DEFAULT_TIMEOUT_MS = 120_000;
 
 const providerImageSchema = z
@@ -83,6 +84,53 @@ function promptContent(prompt: string, imageUrls: readonly string[]) {
   ];
 }
 
+function isGptImageModel(model: ImageGenerationModelId): boolean {
+  return model.startsWith("gpt-image");
+}
+
+function extensionForMimeType(mimeType: string): string {
+  if (mimeType.includes("png")) return "png";
+  if (mimeType.includes("jpeg") || mimeType.includes("jpg")) return "jpg";
+  if (mimeType.includes("webp")) return "webp";
+  return "bin";
+}
+
+function blobFromDataUrl(url: string): Blob {
+  const match = url.match(/^data:([^;,]+)(;base64)?,(.*)$/s);
+  if (!match) throw new Error("Reference image data URL is invalid.");
+
+  const mimeType = match[1] ?? "application/octet-stream";
+  const isBase64 = Boolean(match[2]);
+  const payload = match[3] ?? "";
+  const bytes = isBase64
+    ? Buffer.from(payload, "base64")
+    : Buffer.from(decodeURIComponent(payload), "utf8");
+  return new Blob([bytes], { type: mimeType });
+}
+
+async function blobFromReferenceUrl(url: string, fetcher: typeof fetch): Promise<Blob> {
+  if (url.startsWith("data:")) return blobFromDataUrl(url);
+
+  const response = await fetcher(url);
+  if (!response.ok) {
+    throw new Error(`Reference image request failed with ${response.status}.`);
+  }
+
+  return response.blob();
+}
+
+async function appendEditImages(
+  form: FormData,
+  imageUrls: readonly string[],
+  fetcher: typeof fetch,
+): Promise<void> {
+  for (const [index, imageUrl] of imageUrls.entries()) {
+    const blob = await blobFromReferenceUrl(imageUrl, fetcher);
+    const extension = extensionForMimeType(blob.type);
+    form.append("image", blob, `reference-${index + 1}.${extension}`);
+  }
+}
+
 export function createXiangsuImageGenerator({
   apiKey,
   fetcher = fetch,
@@ -98,26 +146,45 @@ export function createXiangsuImageGenerator({
     const compiled = compileReferencePrompt(input.prompt, input.references);
 
     try {
-      const response = await fetcher(XIANGSU_GENERATION_URL, {
-        method: "POST",
-        headers: {
-          Authorization: apiKey,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: input.model,
-          prompt: compiled.prompt,
-          n: 1,
-          size: "1024x1024",
-          ...(compiled.imageUrls.length > 0
-            ? {
-                image_urls: compiled.imageUrls,
-                content: promptContent(compiled.prompt, compiled.imageUrls),
-              }
-            : {}),
-        }),
-        signal: controller.signal,
-      });
+      const response =
+        compiled.imageUrls.length > 0 && isGptImageModel(input.model)
+          ? await (async () => {
+              const form = new FormData();
+              form.append("model", input.model);
+              form.append("prompt", compiled.prompt);
+              form.append("n", "1");
+              form.append("size", "1024x1024");
+              await appendEditImages(form, compiled.imageUrls, fetcher);
+
+              return fetcher(XIANGSU_EDIT_URL, {
+                method: "POST",
+                headers: {
+                  Authorization: apiKey,
+                },
+                body: form,
+                signal: controller.signal,
+              });
+            })()
+          : await fetcher(XIANGSU_GENERATION_URL, {
+              method: "POST",
+              headers: {
+                Authorization: apiKey,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                model: input.model,
+                prompt: compiled.prompt,
+                n: 1,
+                size: "1024x1024",
+                ...(compiled.imageUrls.length > 0
+                  ? {
+                      image_urls: compiled.imageUrls,
+                      content: promptContent(compiled.prompt, compiled.imageUrls),
+                    }
+                  : {}),
+              }),
+              signal: controller.signal,
+            });
 
       let payload: unknown;
       try {

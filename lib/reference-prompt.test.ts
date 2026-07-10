@@ -13,8 +13,8 @@ describe("reference prompt compiler", () => {
       "https://images.example/sweater.png",
       "https://images.example/vintage.png",
     ]);
-    expect(compiled.prompt).toContain("Reference image 1 is @sweater");
-    expect(compiled.prompt).toContain("Reference image 2 is @vintage");
+    expect(compiled.prompt).toContain("Provider image 1 is @sweater");
+    expect(compiled.prompt).toContain("Provider image 2 is @vintage");
   });
 
   it("adds a strict texture-transfer constraint", () => {
@@ -54,11 +54,12 @@ describe("reference prompt compiler", () => {
     ]);
 
     expect(compiled.imageUrls[0]).toBe("https://images.example/bre.png");
-    expect(compiled.imageUrls[1]).toMatch(/^data:image\/svg\+xml/);
-    expect(compiled.prompt).toContain("Reference image 1 is @bre");
-    expect(compiled.prompt).toContain("Reference image 2 is @Red 032 U");
-    expect(compiled.prompt).toContain("Pantone color swatch Red 032 U (#F65058)");
-    expect(compiled.prompt).toContain("Use @bre as the target/base image");
-    expect(compiled.prompt).toContain("Use @Red 032 U only as the color reference");
+    expect(compiled.imageUrls[1]).toMatch(/^data:image\/png;base64/);
+    expect(compiled.prompt).toContain("Provider image 1 is @bre");
+    expect(compiled.prompt).toContain("Provider image 2 is @Red 032 U");
+    expect(compiled.prompt).toContain("solid Pantone color reference for Red 032 U (#F65058)");
+    expect(compiled.prompt).toContain("Provider image 1 / @bre is the target/base image");
+    expect(compiled.prompt).toContain("Provider image 2 / @Red 032 U is only a color reference");
+    expect(compiled.prompt).toContain("Preserve every detail from @bre");
   });
 });

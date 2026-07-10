@@ -1,3 +1,5 @@
+import { deflateSync } from "node:zlib";
+
 import type { ImageGenerationReference } from "@/lib/image-generation-models";
 
 export interface ProviderImageReference {
@@ -12,35 +14,76 @@ export interface CompiledReferencePrompt {
   imageUrls: string[];
 }
 
-const SVG_XMLNS = "http://www.w3.org/2000/svg";
+const PNG_SWATCH_SIZE = 512;
+const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+const CRC_TABLE = Array.from({ length: 256 }, (_, index) => {
+  let value = index;
+  for (let bit = 0; bit < 8; bit += 1) {
+    value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+  }
+  return value >>> 0;
+});
 
 function normalizedAlias(alias: string): string {
   return alias.trim().replace(/^@+/, "");
 }
 
-function escapeXml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&apos;");
+function crc32(buffer: Buffer): number {
+  let crc = 0xffffffff;
+  for (const byte of buffer) {
+    crc = CRC_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
 }
 
-function pantoneSwatchDataUrl(alias: string, label: string, hex: string): string {
-  const textColor = "#111111";
-  const svg = [
-    `<svg xmlns="${SVG_XMLNS}" width="1024" height="1024" viewBox="0 0 1024 1024">`,
-    `<rect width="1024" height="1024" fill="${escapeXml(hex)}"/>`,
-    '<rect x="96" y="656" width="832" height="272" fill="#ffffff"/>',
-    `<text x="144" y="744" font-family="Arial, Helvetica, sans-serif" font-size="52" font-weight="700" fill="${textColor}">PANTONE</text>`,
-    `<text x="144" y="814" font-family="Arial, Helvetica, sans-serif" font-size="44" fill="${textColor}">${escapeXml(alias)}</text>`,
-    `<text x="144" y="876" font-family="Arial, Helvetica, sans-serif" font-size="34" fill="${textColor}">${escapeXml(label)}</text>`,
-    `<text x="144" y="916" font-family="Arial, Helvetica, sans-serif" font-size="26" fill="#555555">${escapeXml(hex.toUpperCase())}</text>`,
-    "</svg>",
-  ].join("");
+function pngChunk(type: string, data: Buffer): Buffer {
+  const typeBuffer = Buffer.from(type, "ascii");
+  const length = Buffer.alloc(4);
+  const crc = Buffer.alloc(4);
+  length.writeUInt32BE(data.length, 0);
+  crc.writeUInt32BE(crc32(Buffer.concat([typeBuffer, data])), 0);
+  return Buffer.concat([length, typeBuffer, data, crc]);
+}
 
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+function rgbFromHex(hex: string): [number, number, number] {
+  return [
+    Number.parseInt(hex.slice(1, 3), 16),
+    Number.parseInt(hex.slice(3, 5), 16),
+    Number.parseInt(hex.slice(5, 7), 16),
+  ];
+}
+
+function solidColorPngDataUrl(hex: string): string {
+  const [red, green, blue] = rgbFromHex(hex);
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(PNG_SWATCH_SIZE, 0);
+  ihdr.writeUInt32BE(PNG_SWATCH_SIZE, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 2;
+  ihdr[10] = 0;
+  ihdr[11] = 0;
+  ihdr[12] = 0;
+
+  const rowLength = 1 + PNG_SWATCH_SIZE * 3;
+  const raw = Buffer.alloc(rowLength * PNG_SWATCH_SIZE);
+  for (let y = 0; y < PNG_SWATCH_SIZE; y += 1) {
+    const rowOffset = y * rowLength;
+    raw[rowOffset] = 0;
+    for (let x = 0; x < PNG_SWATCH_SIZE; x += 1) {
+      const pixelOffset = rowOffset + 1 + x * 3;
+      raw[pixelOffset] = red;
+      raw[pixelOffset + 1] = green;
+      raw[pixelOffset + 2] = blue;
+    }
+  }
+
+  const png = Buffer.concat([
+    PNG_SIGNATURE,
+    pngChunk("IHDR", ihdr),
+    pngChunk("IDAT", deflateSync(raw)),
+    pngChunk("IEND", Buffer.alloc(0)),
+  ]);
+  return `data:image/png;base64,${png.toString("base64")}`;
 }
 
 export function referencesForProvider(
@@ -61,9 +104,9 @@ export function referencesForProvider(
     const hex = reference.hex.toUpperCase();
     return {
       alias,
-      url: pantoneSwatchDataUrl(alias, label, hex),
+      url: solidColorPngDataUrl(hex),
       source: "pantone",
-      description: `@${alias} is the Pantone color swatch ${label} (${hex}). Use it as exact color guidance, not as text.`,
+      description: `@${alias} is a solid Pantone color reference for ${label} (${hex}). It is color-only guidance, not a subject image.`,
     };
   });
 }
@@ -133,10 +176,12 @@ function colorTransferConstraint(
   const [target, source] = mentioned;
   return [
     "Color-transfer constraint:",
-    `- Use @${target.alias} as the target/base image.`,
-    `- Use @${source.alias} only as the color reference.`,
-    `- Change the target color to match @${source.alias} while preserving @${target.alias}'s shape, typography, texture, lighting, layout, framing, and background.`,
-    `- Do not generate a standalone color card or literal text for @${source.alias}.`,
+    `- Provider image 1 / @${target.alias} is the target/base image and must remain the subject.`,
+    `- Provider image 2 / @${source.alias} is only a color reference.`,
+    `- Recolor the existing subject in @${target.alias} to match @${source.alias}.`,
+    `- Preserve every detail from @${target.alias}: garment type, silhouette, collar, cuffs, hem, folds, knit/fabric texture, lighting, shadows, camera angle, framing, background, and all visible construction details.`,
+    `- Do not replace @${target.alias} with a different product, sweatshirt, logo, pose, layout, or composition.`,
+    `- Do not generate a standalone color card, Pantone label, or literal text for @${source.alias}.`,
   ].join("\n");
 }
 
@@ -152,7 +197,7 @@ export function compileReferencePrompt(
   const mapping = ordered
     .map(
       (reference, index) =>
-        `- Reference image ${index + 1} is @${reference.alias}: ${reference.description}`,
+        `- Provider image ${index + 1} is @${reference.alias}: ${reference.description}`,
     )
     .join("\n");
   const constraints = [
@@ -168,7 +213,8 @@ export function compileReferencePrompt(
       "User instruction:",
       userPrompt,
       "",
-      "Resolve every @alias using the mapping above and the attached reference images in the same order. Do not interpret an @alias as unrelated text.",
+      "Resolve every @alias using the mapping above and the attached provider images in the same order. Do not interpret an @alias as unrelated text.",
+      "When the instruction asks to change color, edit provider image 1 as the base image. Later provider images are references only.",
       ...constraints,
     ]
       .filter((part): part is string => Boolean(part))

@@ -2,11 +2,25 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createXiangsuImageGenerator } from "@/lib/xiangsu";
 
+const sweaterDataUrl = "data:image/png;base64,c3dlYXRlcg==";
+const vintageDataUrl = "data:image/png;base64,dmludGFnZQ==";
+
 const input = {
   model: "gpt-image-2" as const,
   prompt: "A precise product photograph",
   references: [],
 };
+
+function formDataBody(body: BodyInit | null | undefined): FormData {
+  expect(body).toBeInstanceOf(FormData);
+  return body as FormData;
+}
+
+function stringFormValue(form: FormData, name: string): string {
+  const value = form.get(name);
+  expect(typeof value).toBe("string");
+  return String(value);
+}
 
 describe("Xiangsu image generator", () => {
   it("converts a base64 response to a PNG data URL", async () => {
@@ -36,7 +50,7 @@ describe("Xiangsu image generator", () => {
     });
   });
 
-  it("sends connected reference images to the provider", async () => {
+  it("sends GPT image reference edits as ordered multipart image files", async () => {
     const fetcher = vi
       .fn<typeof fetch>()
       .mockResolvedValue(Response.json({ data: [{ b64_json: "aW1hZ2U=" }] }));
@@ -46,41 +60,30 @@ describe("Xiangsu image generator", () => {
       ...input,
       prompt: "change @sweater texture to @vintage",
       references: [
-        { kind: "image", alias: "vintage", url: "https://images.example/vintage.png" },
-        { kind: "image", alias: "sweater", url: "https://images.example/sweater.png" },
+        { kind: "image", alias: "vintage", url: vintageDataUrl },
+        { kind: "image", alias: "sweater", url: sweaterDataUrl },
       ],
     });
 
-    const [, request] = fetcher.mock.calls[0];
-    const body = JSON.parse(String(request?.body)) as {
-      model: string;
-      prompt: string;
-      content: Array<
-        | { type: "text"; text: string }
-        | { type: "image_url"; image_url: { url: string } }
-      >;
-      n: number;
-      size: string;
-      image_urls: string[];
-    };
-    expect(body.model).toBe("gpt-image-2");
-    expect(body.n).toBe(1);
-    expect(body.size).toBe("1024x1024");
-    expect(body.image_urls).toEqual([
-      "https://images.example/sweater.png",
-      "https://images.example/vintage.png",
-    ]);
-    expect(body.content).toEqual([
-      { type: "text", text: body.prompt },
-      { type: "image_url", image_url: { url: "https://images.example/sweater.png" } },
-      { type: "image_url", image_url: { url: "https://images.example/vintage.png" } },
-    ]);
-    expect(body.prompt).toContain("Reference image 1 is @sweater");
-    expect(body.prompt).toContain("Reference image 2 is @vintage");
-    expect(body.prompt).toContain("Do not copy people, faces, bodies, poses");
+    const [url, request] = fetcher.mock.calls[0];
+    const form = formDataBody(request?.body);
+    const images = form.getAll("image");
+    expect(url).toBe("https://www.xiangsuai.cn/v1/images/edits");
+    expect(request?.headers).toEqual({ Authorization: "secret" });
+    expect(stringFormValue(form, "model")).toBe("gpt-image-2");
+    expect(stringFormValue(form, "n")).toBe("1");
+    expect(stringFormValue(form, "size")).toBe("1024x1024");
+    expect(images).toHaveLength(2);
+    expect(images[0]).toBeInstanceOf(Blob);
+    expect(images[1]).toBeInstanceOf(Blob);
+    expect((images[0] as Blob).type).toBe("image/png");
+    expect((images[1] as Blob).type).toBe("image/png");
+    expect(stringFormValue(form, "prompt")).toContain("Provider image 1 is @sweater");
+    expect(stringFormValue(form, "prompt")).toContain("Provider image 2 is @vintage");
+    expect(stringFormValue(form, "prompt")).toContain("Do not copy people, faces, bodies, poses");
   });
 
-  it("sends Pantone swatches as image references instead of plain alias text", async () => {
+  it("sends Pantone color edits as the second multipart image", async () => {
     const fetcher = vi
       .fn<typeof fetch>()
       .mockResolvedValue(Response.json({ data: [{ b64_json: "aW1hZ2U=" }] }));
@@ -88,24 +91,58 @@ describe("Xiangsu image generator", () => {
 
     await generate({
       ...input,
-      prompt: "change @bre color to @Red 032 U",
+      prompt: "change @sweater color to @Yellow C and keep every detail from @sweater",
       references: [
-        { kind: "image", alias: "bre", url: "https://images.example/bre.png" },
-        { kind: "pantone", alias: "Red 032 U", label: "Red 032 U", hex: "#f65058" },
+        { kind: "image", alias: "sweater", url: sweaterDataUrl },
+        { kind: "pantone", alias: "Yellow C", label: "Yellow C", hex: "#fedd00" },
       ],
     });
 
     const [, request] = fetcher.mock.calls[0];
+    const form = formDataBody(request?.body);
+    const images = form.getAll("image");
+    const prompt = stringFormValue(form, "prompt");
+
+    expect(images).toHaveLength(2);
+    expect((images[0] as Blob).type).toBe("image/png");
+    expect((images[1] as Blob).type).toBe("image/png");
+    expect(prompt).toContain("Provider image 1 is @sweater");
+    expect(prompt).toContain("Provider image 2 is @Yellow C");
+    expect(prompt).toContain("solid Pantone color reference for Yellow C (#FEDD00)");
+    expect(prompt).toContain("Provider image 1 / @sweater is the target/base image");
+    expect(prompt).toContain("Provider image 2 / @Yellow C is only a color reference");
+    expect(prompt).toContain("Preserve every detail from @sweater");
+  });
+
+  it("keeps non-GPT image models on the generation endpoint with image URL blocks", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(Response.json({ data: [{ b64_json: "aW1hZ2U=" }] }));
+    const generate = createXiangsuImageGenerator({ apiKey: "secret", fetcher });
+
+    await generate({
+      model: "gemini-3.1-flash-image-preview",
+      prompt: "change @sweater color to @Yellow C",
+      references: [
+        { kind: "image", alias: "sweater", url: sweaterDataUrl },
+        { kind: "pantone", alias: "Yellow C", label: "Yellow C", hex: "#fedd00" },
+      ],
+    });
+
+    const [url, request] = fetcher.mock.calls[0];
     const body = JSON.parse(String(request?.body)) as {
       prompt: string;
+      content: Array<
+        | { type: "text"; text: string }
+        | { type: "image_url"; image_url: { url: string } }
+      >;
       image_urls: string[];
     };
 
-    expect(body.image_urls[0]).toBe("https://images.example/bre.png");
-    expect(body.image_urls[1]).toMatch(/^data:image\/svg\+xml/);
-    expect(body.prompt).toContain("Reference image 1 is @bre");
-    expect(body.prompt).toContain("Reference image 2 is @Red 032 U");
-    expect(body.prompt).toContain("Pantone color swatch Red 032 U (#F65058)");
+    expect(url).toBe("https://www.xiangsuai.cn/v1/images/generations");
+    expect(body.image_urls[0]).toBe(sweaterDataUrl);
+    expect(body.image_urls[1]).toMatch(/^data:image\/png;base64/);
+    expect(body.content[1]).toEqual({ type: "image_url", image_url: { url: sweaterDataUrl } });
   });
 
   it("accepts a remote image URL", async () => {
