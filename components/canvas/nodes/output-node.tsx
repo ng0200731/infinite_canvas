@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { ImagePreviewDialog } from "@/components/image-preview-dialog";
 import { Button } from "@/components/ui/button";
 import { isStaleGenerationConfigurationError } from "@/lib/generation-errors";
+import { normalizeImageGenerationOutputFormat } from "@/lib/image-generation-models";
 import { cn } from "@/lib/utils";
 import { NODE_PORT_COLORS } from "@/lib/nodes/ports";
 import type { OutputCanvasNode } from "@/lib/nodes/types";
@@ -42,8 +43,10 @@ export function OutputNode({ id, data, parentId, selected }: NodeProps<OutputCan
       const blob = await response.blob();
       const objectUrl = URL.createObjectURL(blob);
       const link = document.createElement("a");
+      const outputFormat = normalizeImageGenerationOutputFormat(data.outputFormat);
+      const extension = outputFormat === "jpeg" ? "jpg" : outputFormat;
       link.href = objectUrl;
-      link.download = `generated-${data.model ?? "image"}.png`;
+      link.download = `generated-${data.model ?? "image"}.${extension}`;
       link.click();
       window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
     } catch (error) {

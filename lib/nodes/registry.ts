@@ -1,4 +1,9 @@
-import { DEFAULT_IMAGE_GENERATION_MODEL } from "@/lib/image-generation-models";
+import {
+  DEFAULT_IMAGE_GENERATION_MODEL,
+  DEFAULT_IMAGE_GENERATION_OUTPUT_FORMAT,
+  DEFAULT_IMAGE_GENERATION_RESOLUTION,
+  DEFAULT_IMAGE_GENERATION_SIZE,
+} from "@/lib/image-generation-models";
 import type { CanvasNode, NodeType } from "./types";
 
 export interface NodeMeta {
@@ -74,6 +79,9 @@ export const NODE_META: Record<NodeType, NodeMeta> = {
     defaultData: () => ({
       prompt: "",
       model: DEFAULT_IMAGE_GENERATION_MODEL,
+      size: DEFAULT_IMAGE_GENERATION_SIZE,
+      outputFormat: DEFAULT_IMAGE_GENERATION_OUTPUT_FORMAT,
+      resolution: DEFAULT_IMAGE_GENERATION_RESOLUTION,
       references: [],
       status: "idle",
       resultUrl: null,

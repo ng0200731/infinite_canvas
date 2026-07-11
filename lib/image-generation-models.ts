@@ -2,6 +2,11 @@ import { z } from "zod";
 
 export const IMAGE_GENERATION_MODEL_IDS = [
   "gpt-image-2",
+  "gpt-image-1.5",
+  "gpt-image-1",
+  "gpt-image-1-mini",
+  "dall-e-3",
+  "dall-e-2",
   "gemini-2.5-flash-image",
   "gemini-3-pro-image-preview",
   "gemini-3-pro-image-preview-2K",
@@ -60,9 +65,32 @@ export const imageGenerationReferenceSchema = z.discriminatedUnion("kind", [
 
 export type ImageGenerationReference = z.infer<typeof imageGenerationReferenceSchema>;
 
+export const IMAGE_GENERATION_SIZES = ["1024x1024", "1536x1024", "1024x1536"] as const;
+export const imageGenerationSizeSchema = z.enum(IMAGE_GENERATION_SIZES);
+export type ImageGenerationSize = z.infer<typeof imageGenerationSizeSchema>;
+
+export const IMAGE_GENERATION_OUTPUT_FORMATS = ["png", "jpeg", "webp"] as const;
+export const imageGenerationOutputFormatSchema = z.enum(IMAGE_GENERATION_OUTPUT_FORMATS);
+export type ImageGenerationOutputFormat = z.infer<typeof imageGenerationOutputFormatSchema>;
+
+export const IMAGE_GENERATION_RESOLUTIONS = ["preview", "2K", "4K"] as const;
+export const imageGenerationResolutionSchema = z.enum(IMAGE_GENERATION_RESOLUTIONS);
+export type ImageGenerationResolution = z.infer<typeof imageGenerationResolutionSchema>;
+
+export const DEFAULT_IMAGE_GENERATION_SIZE: ImageGenerationSize = "1024x1024";
+export const DEFAULT_IMAGE_GENERATION_OUTPUT_FORMAT: ImageGenerationOutputFormat = "webp";
+export const DEFAULT_IMAGE_GENERATION_RESOLUTION: ImageGenerationResolution = "preview";
+
 export const imageGenerationRequestSchema = z.object({
   model: xiangsuImageModelIdSchema,
   prompt: z.string().min(1).max(2000),
+  size: imageGenerationSizeSchema.optional().default(DEFAULT_IMAGE_GENERATION_SIZE),
+  outputFormat: imageGenerationOutputFormatSchema
+    .optional()
+    .default(DEFAULT_IMAGE_GENERATION_OUTPUT_FORMAT),
+  resolution: imageGenerationResolutionSchema
+    .optional()
+    .default(DEFAULT_IMAGE_GENERATION_RESOLUTION),
   references: z
     .array(imageGenerationReferenceSchema)
     .max(MAX_IMAGE_GENERATION_REFERENCES)
@@ -161,6 +189,46 @@ export const MODEL_CATALOG_GROUPS: readonly ModelCatalogGroup[] = [
         id: "gpt-image-2",
         officialName: "gpt-image-2",
         aliases: ["DALL-E 3", "GPT Image V2"],
+        family: "gpt-image",
+        capability: "image",
+        enabled: true,
+      },
+      {
+        id: "gpt-image-1.5",
+        officialName: "gpt-image-1.5",
+        aliases: ["GPT Image High Quality"],
+        family: "gpt-image",
+        capability: "image",
+        enabled: true,
+      },
+      {
+        id: "gpt-image-1",
+        officialName: "gpt-image-1",
+        aliases: ["GPT Image Standard"],
+        family: "gpt-image",
+        capability: "image",
+        enabled: true,
+      },
+      {
+        id: "gpt-image-1-mini",
+        officialName: "gpt-image-1-mini",
+        aliases: ["GPT Image Economy"],
+        family: "gpt-image",
+        capability: "image",
+        enabled: true,
+      },
+      {
+        id: "dall-e-3",
+        officialName: "dall-e-3",
+        aliases: ["DALL-E 3 Legacy"],
+        family: "gpt-image",
+        capability: "image",
+        enabled: true,
+      },
+      {
+        id: "dall-e-2",
+        officialName: "dall-e-2",
+        aliases: ["DALL-E 2 Legacy"],
         family: "gpt-image",
         capability: "image",
         enabled: true,
@@ -304,6 +372,45 @@ export const MODEL_CATALOG = MODEL_CATALOG_GROUPS.flatMap((group) => group.entri
 export function normalizeImageGenerationModel(value: unknown): ImageGenerationModelId {
   const parsed = xiangsuImageModelIdSchema.safeParse(value);
   return parsed.success ? parsed.data : DEFAULT_IMAGE_GENERATION_MODEL;
+}
+
+export function normalizeImageGenerationSize(value: unknown): ImageGenerationSize {
+  const parsed = imageGenerationSizeSchema.safeParse(value);
+  return parsed.success ? parsed.data : DEFAULT_IMAGE_GENERATION_SIZE;
+}
+
+export function normalizeImageGenerationOutputFormat(value: unknown): ImageGenerationOutputFormat {
+  const parsed = imageGenerationOutputFormatSchema.safeParse(value);
+  return parsed.success ? parsed.data : DEFAULT_IMAGE_GENERATION_OUTPUT_FORMAT;
+}
+
+export function normalizeImageGenerationResolution(value: unknown): ImageGenerationResolution {
+  const parsed = imageGenerationResolutionSchema.safeParse(value);
+  return parsed.success ? parsed.data : DEFAULT_IMAGE_GENERATION_RESOLUTION;
+}
+
+export function resolutionForImageGenerationModel(
+  model: ImageGenerationModelId,
+): ImageGenerationResolution {
+  if (model.endsWith("-4K")) return "4K";
+  if (model.endsWith("-2K")) return "2K";
+  return "preview";
+}
+
+export function geminiImageSizeForResolution(
+  resolution: ImageGenerationResolution,
+): "1K" | "2K" | "4K" {
+  if (resolution === "4K") return "4K";
+  if (resolution === "2K") return "2K";
+  return "1K";
+}
+
+export function aspectRatioForImageGenerationSize(
+  size: ImageGenerationSize,
+): "1:1" | "3:2" | "2:3" {
+  if (size === "1536x1024") return "3:2";
+  if (size === "1024x1536") return "2:3";
+  return "1:1";
 }
 
 export function getModelCatalogEntry(model: ImageGenerationModelId): ModelCatalogEntry {

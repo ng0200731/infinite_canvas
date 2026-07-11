@@ -1,5 +1,10 @@
 import type { Edge, Node } from "@xyflow/react";
-import type { ImageGenerationModelId } from "@/lib/image-generation-models";
+import type {
+  ImageGenerationModelId,
+  ImageGenerationOutputFormat,
+  ImageGenerationResolution,
+  ImageGenerationSize,
+} from "@/lib/image-generation-models";
 import type { PantoneCatalog } from "./pantone";
 
 /** Registered canvas node type identifiers (kept in sync with the registry). */
@@ -60,6 +65,9 @@ export interface GroupNodeData {
 export interface GenerateNodeData {
   prompt: string;
   model: ImageGenerationModelId;
+  size?: ImageGenerationSize;
+  outputFormat?: ImageGenerationOutputFormat;
+  resolution?: ImageGenerationResolution;
   references: string[];
   status: "idle" | "loading" | "error" | "done";
   resultUrl: string | null;
@@ -74,6 +82,7 @@ export interface OutputNodeData {
   resultUrl: string | null;
   prompt?: string;
   model?: string;
+  outputFormat?: ImageGenerationOutputFormat;
   status: "idle" | "loading" | "error" | "done";
   error?: string;
   /** Node size in pixels; set by the resize handle. Absent = type default. */

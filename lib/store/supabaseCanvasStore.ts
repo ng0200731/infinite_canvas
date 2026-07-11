@@ -139,6 +139,7 @@ const mapImage = (value: unknown): ImageRecord => {
     storagePath: r.storage_path,
     prompt: r.prompt,
     model: r.model,
+    modelDetails: null,
     createdAt: r.created_at,
   };
 };
@@ -366,6 +367,17 @@ export function createSupabaseCanvasStore(): CanvasStore {
     },
 
     // ── Image metadata ──────────────────────────────────────────────────
+    async listImages(canvasId: string) {
+      const { data, error } = await supabase
+        .from("images")
+        .select("id, canvas_id, source, url, storage_path, prompt, model, created_at")
+        .eq("canvas_id", canvasId)
+        .eq("source", "generated")
+        .order("created_at", { ascending: false });
+      assertNoError({ error }, "listImages");
+      return z.array(imageRowSchema).parse(data).map(mapImage);
+    },
+
     async recordImage(input: RecordImageInput) {
       const userId = await getCurrentUserId();
       const { data, error } = await supabase

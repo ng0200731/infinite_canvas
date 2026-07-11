@@ -4,10 +4,17 @@ import { z } from "zod";
 
 import { env } from "@/lib/env";
 import type {
+  ImageGenerationOutputFormat,
   ImageGenerationModelId,
   ImageGenerationReference,
+  ImageGenerationResolution,
+  ImageGenerationSize,
 } from "@/lib/image-generation-models";
-import { xiangsuImageModelIdSchema } from "@/lib/image-generation-models";
+import {
+  aspectRatioForImageGenerationSize,
+  geminiImageSizeForResolution,
+  xiangsuImageModelIdSchema,
+} from "@/lib/image-generation-models";
 import { compileReferencePrompt } from "@/lib/reference-prompt";
 
 const XIANGSU_GENERATION_URL = "https://www.xiangsuai.cn/v1/images/generations";
@@ -29,10 +36,24 @@ const providerSuccessSchema = z.object({
 });
 
 const geminiSuccessSchema = z.object({
-  candidates: z.array(z.object({ content: z.object({ parts: z.array(z.object({
-    inlineData: z.object({ mimeType: z.string(), data: z.string().min(1) }).optional(),
-    inline_data: z.object({ mime_type: z.string(), data: z.string().min(1) }).optional(),
-  }).passthrough()) }) })).min(1),
+  candidates: z
+    .array(
+      z.object({
+        content: z.object({
+          parts: z.array(
+            z
+              .object({
+                inlineData: z.object({ mimeType: z.string(), data: z.string().min(1) }).optional(),
+                inline_data: z
+                  .object({ mime_type: z.string(), data: z.string().min(1) })
+                  .optional(),
+              })
+              .passthrough(),
+          ),
+        }),
+      }),
+    )
+    .min(1),
 });
 
 const providerErrorSchema = z.object({
@@ -50,6 +71,9 @@ const providerErrorSchema = z.object({
 export interface XiangsuGenerateInput {
   model: ImageGenerationModelId;
   prompt: string;
+  size: ImageGenerationSize;
+  outputFormat: ImageGenerationOutputFormat;
+  resolution: ImageGenerationResolution;
   references: ImageGenerationReference[];
 }
 
@@ -81,6 +105,14 @@ function isAbortError(error: unknown): boolean {
   );
 }
 
+function isNetworkFetchError(error: unknown): boolean {
+  return (
+    error instanceof TypeError &&
+    typeof error.message === "string" &&
+    error.message.toLowerCase().includes("fetch failed")
+  );
+}
+
 function promptContent(prompt: string, imageUrls: readonly string[]) {
   if (imageUrls.length === 0) return prompt;
 
@@ -97,14 +129,12 @@ function isGptImageModel(model: ImageGenerationModelId): boolean {
   return model.startsWith("gpt-image");
 }
 
-function isGeminiImageModel(model: ImageGenerationModelId): boolean {
-  return model.startsWith("gemini-");
+function isDallEModel(model: ImageGenerationModelId): boolean {
+  return model.startsWith("dall-e-");
 }
 
-function geminiImageSize(model: ImageGenerationModelId): "1K" | "2K" | "4K" {
-  if (model.endsWith("-4K")) return "4K";
-  if (model.endsWith("-2K")) return "2K";
-  return "1K";
+function isGeminiImageModel(model: ImageGenerationModelId): boolean {
+  return model.startsWith("gemini-");
 }
 
 async function geminiParts(prompt: string, imageUrls: readonly string[], fetcher: typeof fetch) {
@@ -182,14 +212,27 @@ export function createXiangsuImageGenerator({
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     const compiled = compileReferencePrompt(input.prompt, input.references);
 
+    if (compiled.imageUrls.length > 0 && isDallEModel(input.model)) {
+      throw new Error(
+        "DALL-E models do not support reference-image editing. Use a GPT Image model.",
+      );
+    }
+
     try {
       const response = isGeminiImageModel(input.model)
         ? await fetcher(`${XIANGSU_GEMINI_BASE_URL}/${input.model}:generateContent`, {
             method: "POST",
             headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
             body: JSON.stringify({
-              contents: [{ parts: await geminiParts(compiled.prompt, compiled.imageUrls, fetcher) }],
-              generationConfig: { imageConfig: { aspectRatio: "1:1", imageSize: geminiImageSize(input.model) } },
+              contents: [
+                { parts: await geminiParts(compiled.prompt, compiled.imageUrls, fetcher) },
+              ],
+              generationConfig: {
+                imageConfig: {
+                  aspectRatio: aspectRatioForImageGenerationSize(input.size),
+                  imageSize: geminiImageSizeForResolution(input.resolution),
+                },
+              },
             }),
             signal: controller.signal,
           })
@@ -199,13 +242,16 @@ export function createXiangsuImageGenerator({
               form.append("model", input.model);
               form.append("prompt", compiled.prompt);
               form.append("n", "1");
-              form.append("size", "1024x1024");
+              form.append("size", input.size);
+              form.append("background", "auto");
+              form.append("quality", "auto");
+              form.append("output_format", input.outputFormat);
               await appendEditImages(form, compiled.imageUrls, fetcher);
 
               return fetcher(XIANGSU_EDIT_URL, {
                 method: "POST",
                 headers: {
-                  Authorization: apiKey,
+                  Authorization: `Bearer ${apiKey}`,
                 },
                 body: form,
                 signal: controller.signal,
@@ -214,14 +260,17 @@ export function createXiangsuImageGenerator({
           : await fetcher(XIANGSU_GENERATION_URL, {
               method: "POST",
               headers: {
-                Authorization: apiKey,
+                Authorization: `Bearer ${apiKey}`,
                 "Content-Type": "application/json",
               },
               body: JSON.stringify({
                 model: input.model,
                 prompt: compiled.prompt,
                 n: 1,
-                size: "1024x1024",
+                size: input.size,
+                background: "auto",
+                quality: "auto",
+                output_format: input.outputFormat,
                 ...(compiled.imageUrls.length > 0
                   ? {
                       image_urls: compiled.imageUrls,
@@ -270,6 +319,11 @@ export function createXiangsuImageGenerator({
     } catch (error) {
       if (isAbortError(error)) {
         throw new Error("Image generation timed out. Please try again.");
+      }
+      if (isNetworkFetchError(error)) {
+        throw new Error(
+          "The image provider connection failed. Please retry, or switch to GPT Image 2 / 1.5 Pro.",
+        );
       }
       throw error;
     } finally {

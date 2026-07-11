@@ -23,8 +23,9 @@ const KEYS = {
 } as const;
 
 const DB_NAME = "ica:local-store";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const CANVAS_CONTENT_STORE = "canvasContent";
+const IMAGE_RECORD_STORE = "imageRecords";
 
 function isInlineImageUrl(url: string): boolean {
   return url.startsWith("data:image/");
@@ -62,6 +63,9 @@ function openLocalDb(): Promise<IDBDatabase> {
       const db = request.result;
       if (!db.objectStoreNames.contains(CANVAS_CONTENT_STORE)) {
         db.createObjectStore(CANVAS_CONTENT_STORE);
+      }
+      if (!db.objectStoreNames.contains(IMAGE_RECORD_STORE)) {
+        db.createObjectStore(IMAGE_RECORD_STORE, { keyPath: "id" });
       }
     };
     request.onerror = () => reject(request.error ?? new Error("Failed to open browser storage"));
@@ -123,6 +127,44 @@ async function deleteCanvasContentFromIndexedDb(id: string): Promise<void> {
 async function hydrateCanvasContent(canvas: Canvas): Promise<Canvas> {
   const offloadedContent = await readCanvasContentFromIndexedDb(canvas.id);
   return offloadedContent ? { ...canvas, content: offloadedContent } : canvas;
+}
+
+async function listImageRecordsFromIndexedDb(canvasId: string): Promise<ImageRecord[]> {
+  if (!canUseIndexedDb()) return [];
+  const db = await openLocalDb();
+  try {
+    return await new Promise((resolve, reject) => {
+      const request = db
+        .transaction(IMAGE_RECORD_STORE, "readonly")
+        .objectStore(IMAGE_RECORD_STORE)
+        .getAll();
+      request.onerror = () => reject(request.error ?? new Error("Failed to read rendered images"));
+      request.onsuccess = () => {
+        const records = Array.isArray(request.result) ? (request.result as ImageRecord[]) : [];
+        resolve(
+          records.filter((record) => record.canvasId === canvasId && record.source === "generated"),
+        );
+      };
+    });
+  } finally {
+    db.close();
+  }
+}
+
+async function writeImageRecordToIndexedDb(record: ImageRecord): Promise<void> {
+  if (!canUseIndexedDb()) return;
+  const db = await openLocalDb();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const transaction = db.transaction(IMAGE_RECORD_STORE, "readwrite");
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () =>
+        reject(transaction.error ?? new Error("Failed to save rendered image"));
+      transaction.objectStore(IMAGE_RECORD_STORE).put(record);
+    });
+  } finally {
+    db.close();
+  }
 }
 
 function withoutInlineContent(canvas: Canvas): Canvas {
@@ -300,6 +342,14 @@ export const localCanvasStore: CanvasStore = {
   },
 
   // ── Image metadata ────────────────────────────────────────────────────
+  async listImages(canvasId) {
+    const metadata = read<ImageRecord[]>(KEYS.images, []).filter(
+      (image) => image.canvasId === canvasId && image.source === "generated",
+    );
+    const inline = await listImageRecordsFromIndexedDb(canvasId);
+    return [...metadata, ...inline].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+
   async recordImage(input: RecordImageInput) {
     const images = read<ImageRecord[]>(KEYS.images, []);
     const record: ImageRecord = {
@@ -310,6 +360,7 @@ export const localCanvasStore: CanvasStore = {
       storagePath: input.storagePath ?? null,
       prompt: input.prompt ?? null,
       model: input.model ?? null,
+      modelDetails: input.modelDetails ?? null,
       createdAt: nowISO(),
     };
 
@@ -320,6 +371,7 @@ export const localCanvasStore: CanvasStore = {
       if (metadataImages.length !== images.length) {
         write(KEYS.images, metadataImages);
       }
+      await writeImageRecordToIndexedDb(record);
       return delay(record);
     }
 

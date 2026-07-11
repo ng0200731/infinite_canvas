@@ -62,6 +62,9 @@ describe("POST /api/generate", () => {
     expect(generate).toHaveBeenCalledWith({
       model: "gpt-image-2",
       prompt: "A clean studio photograph",
+      size: "1024x1024",
+      outputFormat: "webp",
+      resolution: "preview",
       references: [],
     });
   });
@@ -89,7 +92,38 @@ describe("POST /api/generate", () => {
     expect(generate).toHaveBeenCalledWith({
       model: "gemini-3.1-flash-image-preview",
       prompt: "Keep @product and apply @texture",
+      size: "1024x1024",
+      outputFormat: "webp",
+      resolution: "preview",
       references,
+    });
+  });
+
+  it("validates and forwards image generation settings", async () => {
+    const generate = vi.fn().mockResolvedValue({
+      url: "data:image/png;base64,aW1hZ2U=",
+      model: "gpt-image-1.5",
+    });
+    const handler = createGeneratePostHandler({ configured: true, generate });
+
+    const response = await handler(
+      request({
+        model: "gpt-image-1.5",
+        prompt: "A campaign image",
+        size: "1536x1024",
+        outputFormat: "png",
+        resolution: "4K",
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(generate).toHaveBeenCalledWith({
+      model: "gpt-image-1.5",
+      prompt: "A campaign image",
+      size: "1536x1024",
+      outputFormat: "png",
+      resolution: "4K",
+      references: [],
     });
   });
 

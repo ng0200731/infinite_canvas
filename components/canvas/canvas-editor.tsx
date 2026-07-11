@@ -55,7 +55,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCanvas } from "@/lib/hooks/use-canvas";
-import { normalizeImageGenerationModel } from "@/lib/image-generation-models";
+import {
+  normalizeImageGenerationModel,
+  normalizeImageGenerationOutputFormat,
+  normalizeImageGenerationResolution,
+  normalizeImageGenerationSize,
+  resolutionForImageGenerationModel,
+  type ImageGenerationResolution,
+  type ImageGenerationSize,
+  type ImageGenerationOutputFormat,
+} from "@/lib/image-generation-models";
 import { getCanvasStore } from "@/lib/store";
 import { createNode } from "@/lib/nodes/registry";
 import {
@@ -75,6 +84,7 @@ import {
   type ConnectedInputReference,
 } from "./canvas-context";
 import { NodePalette } from "./node-palette";
+import { RenderGalleryDialog } from "./render-gallery-dialog";
 import { DeletableEdge } from "./edges/canvas-edge";
 import { ActionNode } from "./nodes/action-node";
 import { GenerateNode } from "./nodes/generate-node";
@@ -288,6 +298,7 @@ function findConnectedOutputState(
     resultUrl: typeof outputNode.data.resultUrl === "string" ? outputNode.data.resultUrl : null,
     prompt: typeof outputNode.data.prompt === "string" ? outputNode.data.prompt : undefined,
     model: typeof outputNode.data.model === "string" ? outputNode.data.model : undefined,
+    outputFormat: normalizeImageGenerationOutputFormat(outputNode.data.outputFormat),
     status: outputStatus(outputNode.data.status),
     error: typeof outputNode.data.error === "string" ? outputNode.data.error : undefined,
   };
@@ -369,13 +380,19 @@ function normalizeNodeType(node: CanvasNode): CanvasNode {
   if (normalizedType !== "generate") {
     return normalizedType === node.type ? node : { ...node, type: normalizedType };
   }
+  const model = normalizeImageGenerationModel(node.data.model);
 
   return {
     ...node,
     type: normalizedType,
     data: {
       ...node.data,
-      model: normalizeImageGenerationModel(node.data.model),
+      model,
+      size: normalizeImageGenerationSize(node.data.size),
+      outputFormat: normalizeImageGenerationOutputFormat(node.data.outputFormat),
+      resolution: normalizeImageGenerationResolution(
+        node.data.resolution ?? resolutionForImageGenerationModel(model),
+      ),
     },
   };
 }
@@ -780,11 +797,23 @@ function Editor({
   );
 
   const writeGeneratedImageToOutput = useCallback(
-    (generateNodeId: string, url: string, meta: { prompt: string; model: string; storagePath: string | null }) => {
+    (
+      generateNodeId: string,
+      url: string,
+      meta: {
+        prompt: string;
+        model: string;
+        size: ImageGenerationSize;
+        resolution: ImageGenerationResolution;
+        outputFormat: ImageGenerationOutputFormat;
+        storagePath: string | null;
+      },
+    ) => {
       const updated = updateConnectedOutputData(generateNodeId, {
         resultUrl: url,
         prompt: meta.prompt,
         model: meta.model,
+        outputFormat: meta.outputFormat,
         status: "done",
         error: undefined,
       });
@@ -799,6 +828,12 @@ function Editor({
           storagePath: meta.storagePath,
           prompt: meta.prompt,
           model: meta.model,
+          modelDetails: {
+            model: meta.model,
+            size: meta.size,
+            resolution: meta.resolution,
+            outputFormat: meta.outputFormat,
+          },
         })
         .catch((error: unknown) => {
           toast.error(error instanceof Error ? error.message : "Failed to record generated image");
@@ -1065,6 +1100,7 @@ function Editor({
           </div>
         )}
         <div className="ml-auto flex items-center gap-2">
+          <RenderGalleryDialog canvasId={canvasId} />
           <ConfirmDialog
             title="Delete all nodes?"
             description="This removes every node and wire from this canvas."

@@ -62,3 +62,162 @@ Creating turbopack project { dir: 'D:\\project\\trial-2026-infinite-canvas', tes
  GET / 200 in 2.1s (next.js: 20ms, proxy.ts: 1310ms, application-code: 802ms)
  GET / 200 in 1425ms (next.js: 22ms, proxy.ts: 1172ms, application-code: 232ms)
  POST /api/generate 200 in 22.9s (next.js: 317ms, proxy.ts: 1795ms, application-code: 20.8s)
+ POST /api/generate 200 in 23.3s (next.js: 17ms, proxy.ts: 429ms, application-code: 22.9s)
+ GET / 200 in 540ms (next.js: 30ms, proxy.ts: 189ms, application-code: 321ms)
+ POST /api/generate 502 in 30.8s (next.js: 9ms, proxy.ts: 1880ms, application-code: 28.9s)
+ POST /api/generate 200 in 70s (next.js: 16ms, proxy.ts: 752ms, application-code: 69s)
+ POST /api/generate 502 in 23.2s (next.js: 10ms, proxy.ts: 15.5s, application-code: 7.7s)
+✓ Compiled in 1727ms
+ GET / 200 in 1336ms (next.js: 363ms, proxy.ts: 766ms, application-code: 206ms)
+ GET / 200 in 240ms (next.js: 9ms, proxy.ts: 147ms, application-code: 84ms)
+ GET / 200 in 193ms (next.js: 7ms, proxy.ts: 112ms, application-code: 75ms)
+ GET / 200 in 209ms (next.js: 6ms, proxy.ts: 101ms, application-code: 102ms)
+ POST /api/generate 200 in 74s (next.js: 340ms, proxy.ts: 6.1s, application-code: 68s)
+ GET / 200 in 16.5s (next.js: 33ms, proxy.ts: 16.3s, application-code: 214ms)
+ GET / 200 in 36.5s (next.js: 78ms, proxy.ts: 36.3s, application-code: 166ms)
+ GET / 200 in 16.5s (next.js: 120ms, proxy.ts: 16.2s, application-code: 123ms)
+ GET / 200 in 36.7s (next.js: 10ms, proxy.ts: 35.5s, application-code: 1232ms)
+ GET / 200 in 19.5s (next.js: 7ms, proxy.ts: 19.4s, application-code: 41ms)
+ GET / 200 in 655ms (next.js: 8ms, proxy.ts: 552ms, application-code: 95ms)
+ POST /api/generate 200 in 67s (next.js: 5ms, proxy.ts: 344ms, application-code: 66s)
+ POST /api/generate 502 in 29.5s (next.js: 14ms, proxy.ts: 504ms, application-code: 29.0s)
+ GET / 200 in 1773ms (next.js: 341ms, proxy.ts: 1200ms, application-code: 232ms)
+ GET / 200 in 212ms (next.js: 17ms, proxy.ts: 107ms, application-code: 88ms)
+ GET / 200 in 2.1s (next.js: 13ms, proxy.ts: 832ms, application-code: 1293ms)
+✓ Compiled in 144ms
+ GET / 200 in 1330ms (next.js: 122ms, proxy.ts: 1101ms, application-code: 108ms)
+ GET / 200 in 178ms (next.js: 5ms, proxy.ts: 143ms, application-code: 30ms)
+ GET / 200 in 161ms (next.js: 4ms, proxy.ts: 141ms, application-code: 16ms)
+ GET / 200 in 490ms (next.js: 41ms, proxy.ts: 235ms, application-code: 214ms)
+ GET / 200 in 215ms (next.js: 16ms, proxy.ts: 90ms, application-code: 109ms)
+ GET / 200 in 202ms (next.js: 13ms, proxy.ts: 82ms, application-code: 106ms)
+ GET / 200 in 1121ms (next.js: 7ms, proxy.ts: 149ms, application-code: 964ms)
+ POST /api/generate 502 in 2.6s (next.js: 240ms, proxy.ts: 207ms, application-code: 2.1s)
+ POST /api/generate 502 in 1032ms (next.js: 10ms, proxy.ts: 270ms, application-code: 751ms)
+ POST /api/generate 502 in 962ms (next.js: 8ms, proxy.ts: 303ms, application-code: 651ms)
+ POST /api/generate 502 in 2.0min (next.js: 17ms, proxy.ts: 168ms, application-code: 2.0min)
+✓ Compiled in 87ms
+ GET / 200 in 742ms (next.js: 124ms, proxy.ts: 555ms, application-code: 62ms)
+ GET / 200 in 177ms (next.js: 3ms, proxy.ts: 155ms, application-code: 19ms)
+ GET / 200 in 98ms (next.js: 4ms, proxy.ts: 76ms, application-code: 18ms)
+✓ Compiled in 200ms
+ GET / 200 in 368ms (next.js: 90ms, proxy.ts: 203ms, application-code: 75ms)
+ GET / 200 in 97ms (next.js: 4ms, proxy.ts: 69ms, application-code: 24ms)
+✓ Compiled in 257ms
+ GET / 200 in 983ms (next.js: 255ms, proxy.ts: 515ms, application-code: 213ms)
+ GET / 200 in 158ms (next.js: 7ms, proxy.ts: 97ms, application-code: 54ms)
+✓ Compiled in 216ms
+ GET / 200 in 1071ms (next.js: 289ms, proxy.ts: 579ms, application-code: 204ms)
+ GET / 200 in 141ms (next.js: 7ms, proxy.ts: 78ms, application-code: 57ms)
+✓ Compiled in 963ms
+ GET / 200 in 844ms (next.js: 297ms, proxy.ts: 395ms, application-code: 152ms)
+ GET / 200 in 190ms (next.js: 13ms, proxy.ts: 90ms, application-code: 87ms)
+✓ Compiled in 219ms
+ GET / 200 in 623ms (next.js: 206ms, proxy.ts: 292ms, application-code: 125ms)
+ GET / 200 in 123ms (next.js: 6ms, proxy.ts: 72ms, application-code: 46ms)
+✓ Compiled in 1351ms
+✓ Compiled in 163ms
+ GET / 200 in 1176ms (next.js: 274ms, proxy.ts: 391ms, application-code: 511ms)
+ GET / 200 in 542ms (next.js: 187ms, proxy.ts: 242ms, application-code: 114ms)
+ GET / 200 in 126ms (next.js: 7ms, proxy.ts: 72ms, application-code: 47ms)
+ GET / 200 in 135ms (next.js: 7ms, proxy.ts: 67ms, application-code: 61ms)
+ GET / 200 in 141ms (next.js: 6ms, proxy.ts: 74ms, application-code: 61ms)
+ GET / 200 in 170ms (next.js: 8ms, proxy.ts: 65ms, application-code: 97ms)
+ GET / 200 in 126ms (next.js: 5ms, proxy.ts: 68ms, application-code: 53ms)
+ GET / 200 in 130ms (next.js: 8ms, proxy.ts: 68ms, application-code: 54ms)
+ GET / 200 in 129ms (next.js: 6ms, proxy.ts: 70ms, application-code: 52ms)
+ GET / 200 in 133ms (next.js: 7ms, proxy.ts: 80ms, application-code: 46ms)
+✓ Compiled in 165ms
+ GET / 200 in 675ms (next.js: 198ms, proxy.ts: 352ms, application-code: 125ms)
+ GET / 200 in 124ms (next.js: 6ms, proxy.ts: 69ms, application-code: 49ms)
+ GET / 200 in 683ms (next.js: 174ms, proxy.ts: 404ms, application-code: 104ms)
+✓ Compiled in 111ms
+ GET / 200 in 496ms (next.js: 101ms, proxy.ts: 301ms, application-code: 94ms)
+ GET / 200 in 110ms (next.js: 3ms, proxy.ts: 86ms, application-code: 21ms)
+✓ Compiled in 121ms
+ GET / 200 in 598ms (next.js: 82ms, proxy.ts: 349ms, application-code: 167ms)
+ GET / 200 in 224ms (next.js: 4ms, proxy.ts: 187ms, application-code: 33ms)
+ GET / 200 in 101ms (next.js: 5ms, proxy.ts: 80ms, application-code: 17ms)
+✓ Compiled in 96ms
+ GET / 200 in 890ms (next.js: 69ms, proxy.ts: 773ms, application-code: 48ms)
+ GET / 200 in 100ms (next.js: 4ms, proxy.ts: 82ms, application-code: 14ms)
+✓ Compiled in 111ms
+ GET / 200 in 259ms (next.js: 80ms, proxy.ts: 128ms, application-code: 51ms)
+ GET / 200 in 82ms (next.js: 2ms, proxy.ts: 65ms, application-code: 14ms)
+✓ Compiled in 400ms
+ GET / 200 in 809ms (next.js: 217ms, proxy.ts: 371ms, application-code: 221ms)
+ GET / 200 in 157ms (next.js: 6ms, proxy.ts: 100ms, application-code: 52ms)
+ GET / 200 in 127ms (next.js: 6ms, proxy.ts: 67ms, application-code: 54ms)
+ GET / 200 in 142ms (next.js: 7ms, proxy.ts: 75ms, application-code: 61ms)
+ GET / 200 in 134ms (next.js: 7ms, proxy.ts: 67ms, application-code: 60ms)
+ GET / 200 in 125ms (next.js: 8ms, proxy.ts: 70ms, application-code: 47ms)
+✓ Compiled in 104ms
+✓ Compiled in 121ms
+✓ Compiled in 362ms
+✓ Compiled in 441ms
+✓ Compiled in 691ms
+✓ Compiled in 204ms
+✓ Compiled in 535ms
+✓ Compiled in 120ms
+✓ Compiled in 110ms
+ GET / 200 in 1258ms (next.js: 326ms, proxy.ts: 760ms, application-code: 171ms)
+ GET / 200 in 189ms (next.js: 9ms, proxy.ts: 91ms, application-code: 89ms)
+ GET / 200 in 1570ms (next.js: 7ms, proxy.ts: 82ms, application-code: 1481ms)
+✓ Compiled in 172ms
+ GET / 200 in 700ms (next.js: 216ms, proxy.ts: 352ms, application-code: 132ms)
+ GET / 200 in 134ms (next.js: 6ms, proxy.ts: 79ms, application-code: 49ms)
+✓ Compiled in 264ms
+ GET / 200 in 608ms (next.js: 207ms, proxy.ts: 262ms, application-code: 139ms)
+ GET / 200 in 153ms (next.js: 7ms, proxy.ts: 95ms, application-code: 51ms)
+ POST /api/generate 200 in 25.4s (next.js: 362ms, proxy.ts: 158ms, application-code: 24.9s)
+ GET /login?redirect=%2Fprojects 200 in 696ms (next.js: 69ms, proxy.ts: 11ms, application-code: 615ms)
+ GET / 200 in 481ms (next.js: 7ms, proxy.ts: 138ms, application-code: 337ms)
+✓ Compiled in 163ms
+ GET / 200 in 1132ms (next.js: 212ms, proxy.ts: 762ms, application-code: 158ms)
+ GET / 200 in 193ms (next.js: 10ms, proxy.ts: 115ms, application-code: 68ms)
+✓ Compiled in 230ms
+ GET / 200 in 668ms (next.js: 130ms, proxy.ts: 423ms, application-code: 115ms)
+ GET / 200 in 223ms (next.js: 5ms, proxy.ts: 189ms, application-code: 29ms)
+✓ Compiled in 73ms
+ GET / 200 in 465ms (next.js: 96ms, proxy.ts: 273ms, application-code: 96ms)
+ GET / 200 in 99ms (next.js: 4ms, proxy.ts: 71ms, application-code: 24ms)
+✓ Compiled in 210ms
+ GET / 200 in 539ms (next.js: 85ms, proxy.ts: 281ms, application-code: 173ms)
+ GET / 200 in 217ms (next.js: 6ms, proxy.ts: 186ms, application-code: 24ms)
+✓ Compiled in 303ms
+ GET / 200 in 780ms (next.js: 249ms, proxy.ts: 345ms, application-code: 187ms)
+ GET / 200 in 166ms (next.js: 11ms, proxy.ts: 108ms, application-code: 47ms)
+✓ Compiled in 102ms
+ GET / 200 in 340ms (next.js: 87ms, proxy.ts: 196ms, application-code: 58ms)
+ GET / 200 in 94ms (next.js: 3ms, proxy.ts: 63ms, application-code: 27ms)
+✓ Compiled in 139ms
+ GET / 200 in 608ms (next.js: 151ms, proxy.ts: 363ms, application-code: 95ms)
+ GET / 200 in 104ms (next.js: 4ms, proxy.ts: 77ms, application-code: 23ms)
+ GET / 200 in 1294ms (next.js: 7ms, proxy.ts: 439ms, application-code: 848ms)
+ GET / 200 in 316ms (next.js: 8ms, proxy.ts: 214ms, application-code: 94ms)
+ GET / 200 in 495ms (next.js: 10ms, proxy.ts: 392ms, application-code: 93ms)
+✓ Compiled in 148ms
+ GET / 200 in 810ms (next.js: 262ms, proxy.ts: 417ms, application-code: 131ms)
+ GET / 200 in 128ms (next.js: 6ms, proxy.ts: 83ms, application-code: 39ms)
+ POST /api/generate 502 in 982ms (next.js: 221ms, proxy.ts: 182ms, application-code: 579ms)
+ POST /api/generate 502 in 13.1s (next.js: 7ms, proxy.ts: 221ms, application-code: 12.8s)
+ POST /api/generate 200 in 13.0s (next.js: 8ms, proxy.ts: 121ms, application-code: 12.9s)
+✓ Compiled in 172ms
+ GET / 200 in 774ms (next.js: 267ms, proxy.ts: 354ms, application-code: 153ms)
+ GET / 200 in 145ms (next.js: 7ms, proxy.ts: 81ms, application-code: 57ms)
+ POST /api/generate 200 in 68s (next.js: 10ms, proxy.ts: 187ms, application-code: 68s)
+ GET / 200 in 820ms (next.js: 7ms, proxy.ts: 164ms, application-code: 649ms)
+ POST /api/generate 502 in 11.7s (next.js: 146ms, proxy.ts: 163ms, application-code: 11.4s)
+ POST /api/generate 502 in 11.1s (next.js: 8ms, proxy.ts: 176ms, application-code: 10.9s)
+ POST /api/generate 200 in 18.9s (next.js: 16ms, proxy.ts: 164ms, application-code: 18.7s)
+ POST /api/generate 502 in 11.7s (next.js: 8ms, proxy.ts: 246ms, application-code: 11.4s)
+ POST /api/generate 200 in 23.5s (next.js: 7ms, proxy.ts: 363ms, application-code: 23.1s)
+ POST /api/generate 200 in 42s (next.js: 13ms, proxy.ts: 146ms, application-code: 42s)
+ POST /api/generate 200 in 22.6s (next.js: 6ms, proxy.ts: 189ms, application-code: 22.4s)
+ POST /api/generate 502 in 11.1s (next.js: 15ms, proxy.ts: 181ms, application-code: 10.9s)
+ POST /api/generate 502 in 11.4s (next.js: 10ms, proxy.ts: 167ms, application-code: 11.2s)
+ POST /api/generate 502 in 555ms (next.js: 9ms, proxy.ts: 183ms, application-code: 364ms)
+ POST /api/generate 502 in 11.5s (next.js: 10ms, proxy.ts: 156ms, application-code: 11.4s)
+ POST /api/generate 502 in 282ms (next.js: 20ms, proxy.ts: 239ms, application-code: 22ms)
+ POST /api/generate 502 in 179ms (next.js: 11ms, proxy.ts: 154ms, application-code: 14ms)
+ POST /api/generate 502 in 742ms (next.js: 12ms, proxy.ts: 118ms, application-code: 613ms)

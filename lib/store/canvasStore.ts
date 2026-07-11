@@ -25,7 +25,15 @@ export interface ImageRecord {
   storagePath: string | null;
   prompt: string | null;
   model: string | null;
+  modelDetails: ImageModelDetails | null;
   createdAt: string;
+}
+
+export interface ImageModelDetails {
+  model: string;
+  size: string | null;
+  resolution: string | null;
+  outputFormat: string | null;
 }
 
 export interface CreateProjectInput {
@@ -45,6 +53,7 @@ export interface RecordImageInput {
   storagePath?: string | null;
   prompt?: string | null;
   model?: string | null;
+  modelDetails?: ImageModelDetails | null;
 }
 
 export type ProjectUpdate = Partial<Pick<Project, "name" | "description">>;
@@ -76,5 +85,6 @@ export interface CanvasStore {
   deleteCanvas(id: string): Promise<void>;
 
   // ── Image metadata ────────────────────────────────────────────────────
+  listImages(canvasId: string): Promise<ImageRecord[]>;
   recordImage(input: RecordImageInput): Promise<ImageRecord>;
 }

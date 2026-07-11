@@ -13,7 +13,6 @@ import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ImagePreviewDialog } from "@/components/image-preview-dialog";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -25,13 +24,27 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  DEFAULT_IMAGE_GENERATION_OUTPUT_FORMAT,
+  DEFAULT_IMAGE_GENERATION_MODEL,
+  DEFAULT_IMAGE_GENERATION_RESOLUTION,
+  DEFAULT_IMAGE_GENERATION_SIZE,
   getModelCatalogEntry,
+  IMAGE_GENERATION_OUTPUT_FORMATS,
+  IMAGE_GENERATION_RESOLUTIONS,
+  IMAGE_GENERATION_SIZES,
+  type ImageGenerationModelId,
+  type ImageGenerationOutputFormat,
   type ImageGenerationReference,
+  type ImageGenerationResolution,
+  type ImageGenerationSize,
   imageGenerationErrorSchema,
   imageGenerationResponseSchema,
   MAX_IMAGE_GENERATION_REFERENCES,
-  MODEL_CATALOG_GROUPS,
+  normalizeImageGenerationOutputFormat,
+  normalizeImageGenerationResolution,
+  normalizeImageGenerationSize,
   normalizeImageGenerationModel,
+  resolutionForImageGenerationModel,
 } from "@/lib/image-generation-models";
 import { isStaleGenerationConfigurationError } from "@/lib/generation-errors";
 import { persistGeneratedImage } from "@/lib/upload";
@@ -66,6 +79,120 @@ interface PromptReference {
 interface PromptPart {
   value: string;
   reference: PromptReference | null;
+}
+
+type ImageProvider = "gpt" | "gemini";
+type GeminiVersion = "1" | "2" | "pro";
+
+const GPT_MODEL_OPTIONS: readonly {
+  label: string;
+  description: string;
+  model: ImageGenerationModelId;
+  status: "current" | "legacy";
+  enabled: boolean;
+  disabledReason?: string;
+}[] = [
+  {
+    label: "2",
+    description: "GPT Image 2",
+    model: "gpt-image-2",
+    status: "current",
+    enabled: true,
+  },
+  {
+    label: "1.5 Pro",
+    description: "GPT Image 1.5",
+    model: "gpt-image-1.5",
+    status: "current",
+    enabled: true,
+  },
+  {
+    label: "1",
+    description: "GPT Image 1",
+    model: "gpt-image-1",
+    status: "current",
+    enabled: true,
+  },
+  {
+    label: "1 Mini",
+    description: "GPT Image 1 Mini",
+    model: "gpt-image-1-mini",
+    status: "current",
+    enabled: false,
+    disabledReason: "Unavailable on Xiangsu currently",
+  },
+  {
+    label: "DALL-E 3",
+    description: "Legacy generation",
+    model: "dall-e-3",
+    status: "legacy",
+    enabled: true,
+  },
+  {
+    label: "DALL-E 2",
+    description: "Legacy generation",
+    model: "dall-e-2",
+    status: "legacy",
+    enabled: true,
+  },
+];
+
+const GEMINI_VERSION_OPTIONS: readonly {
+  label: string;
+  value: GeminiVersion;
+  description: string;
+  enabled: boolean;
+  disabledReason?: string;
+}[] = [
+  { label: "Pro", value: "pro", description: "NanoBanana Pro", enabled: true },
+  { label: "2", value: "2", description: "NanoBanana 2", enabled: true },
+  {
+    label: "1",
+    value: "1",
+    description: "NanoBanana 1",
+    enabled: false,
+    disabledReason: "Unavailable on Xiangsu currently",
+  },
+];
+
+const SIZE_LABELS: Record<ImageGenerationSize, string> = {
+  "1024x1024": "Square",
+  "1536x1024": "Wide",
+  "1024x1536": "Tall",
+};
+
+const FORMAT_LABELS: Record<ImageGenerationOutputFormat, string> = {
+  png: "PNG",
+  jpeg: "JPEG",
+  webp: "WebP",
+};
+
+const RESOLUTION_LABELS: Record<ImageGenerationResolution, string> = {
+  preview: "Preview",
+  "2K": "2K",
+  "4K": "4K",
+};
+
+function providerForModel(model: ImageGenerationModelId): ImageProvider {
+  return model.startsWith("gemini-") ? "gemini" : "gpt";
+}
+
+function geminiVersionForModel(model: ImageGenerationModelId): GeminiVersion {
+  if (model.startsWith("gemini-3-pro-image-preview")) return "pro";
+  if (model.startsWith("gemini-3.1-flash-image-preview")) return "2";
+  return "1";
+}
+
+function geminiModelFor(
+  version: GeminiVersion,
+  resolution: ImageGenerationResolution,
+): ImageGenerationModelId {
+  if (version === "1") return "gemini-2.5-flash-image";
+  const suffix = resolution === "preview" ? "" : `-${resolution}`;
+  if (version === "pro") {
+    return `gemini-3-pro-image-preview${suffix}` as ImageGenerationModelId;
+  }
+  return `gemini-3.1-flash-image-preview${suffix}` as ImageGenerationModelId;
 }
 
 function mentionAtCaret(value: string, caret: number): MentionState | null {
@@ -247,6 +374,17 @@ export function GenerateNode({ id, data, parentId, selected }: NodeProps<Generat
   const hasReferenceItems = connectedReferences.length > 0 || manualImageReferences.length > 0;
   const hasGenerationReferences = allGenerationReferences.length > 0;
   const model = normalizeImageGenerationModel(data.model);
+  const provider = providerForModel(model);
+  const size = normalizeImageGenerationSize(data.size ?? DEFAULT_IMAGE_GENERATION_SIZE);
+  const outputFormat = normalizeImageGenerationOutputFormat(
+    data.outputFormat ?? DEFAULT_IMAGE_GENERATION_OUTPUT_FORMAT,
+  );
+  const resolution = normalizeImageGenerationResolution(
+    data.resolution ??
+      resolutionForImageGenerationModel(model) ??
+      DEFAULT_IMAGE_GENERATION_RESOLUTION,
+  );
+  const geminiVersion = geminiVersionForModel(model);
   const selectedModel = getModelCatalogEntry(model);
   const isGenerating = loading || data.status === "loading";
   const mentionSuggestions = mention
@@ -262,6 +400,13 @@ export function GenerateNode({ id, data, parentId, selected }: NodeProps<Generat
   const firstMentionSuggestion = mentionSuggestions[0];
   const activeMentionSuggestion =
     mentionSuggestions[activeSuggestionIndex] ?? firstMentionSuggestion;
+  const selectedGptOption = GPT_MODEL_OPTIONS.find((option) => option.model === model);
+  const currentModelUnavailable = provider === "gpt"
+    ? Boolean(selectedGptOption && !selectedGptOption.enabled)
+    : geminiVersion === "1";
+  const currentModelBlockedByReferences =
+    provider === "gpt" &&
+    Boolean(selectedGptOption?.status === "legacy" && hasGenerationReferences);
 
   const renderedReferences = connectedReferences.map((reference) => {
     const isReferenceHovered = hoveredReferenceNodeId === reference.nodeId;
@@ -455,7 +600,14 @@ export function GenerateNode({ id, data, parentId, selected }: NodeProps<Generat
       return;
     }
 
-    updateNodeData(id, { status: "loading", error: undefined, model });
+    updateNodeData(id, {
+      status: "loading",
+      error: undefined,
+      model,
+      size,
+      outputFormat,
+      resolution,
+    });
     try {
       const res = await fetch("/api/generate", {
         method: "POST",
@@ -463,6 +615,9 @@ export function GenerateNode({ id, data, parentId, selected }: NodeProps<Generat
         body: JSON.stringify({
           model,
           prompt,
+          size,
+          outputFormat,
+          resolution,
           references: allGenerationReferences,
         }),
       });
@@ -472,22 +627,28 @@ export function GenerateNode({ id, data, parentId, selected }: NodeProps<Generat
         const error = imageGenerationErrorSchema.safeParse(json);
         throw new Error(error.success ? error.data.error : "Generation failed");
       }
-      const persisted = await persistGeneratedImage(parsed.data.url);
+      const persisted = await persistGeneratedImage(parsed.data.url, outputFormat);
       updateNodeData(id, {
         status: "done",
         resultUrl: persisted.url,
         model: parsed.data.model,
+        size,
+        outputFormat,
+        resolution,
         error: undefined,
       });
       const outputWritten = writeGeneratedImageToOutput(id, persisted.url, {
         prompt,
         model: parsed.data.model,
+        size,
+        resolution,
+        outputFormat,
         storagePath: persisted.storagePath,
       });
       if (!outputWritten) {
         throw new Error("Output node was disconnected before generation finished");
       }
-      toast.success("Image generated. Download it from Output if you need to keep this version.");
+      toast.success("Image generated and saved to Renders.");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Generation failed";
       updateNodeData(id, { status: "error", error: message });
@@ -520,55 +681,206 @@ export function GenerateNode({ id, data, parentId, selected }: NodeProps<Generat
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-x-hidden overflow-y-auto p-3">
-        <div className="flex flex-col gap-1">
-          <span className="text-muted-foreground text-xs">Model</span>
-          <Select
-            value={model}
-            onValueChange={(value) => {
-              const nextModel = normalizeImageGenerationModel(value);
-              updateNodeData(id, { model: nextModel });
-            }}
-          >
-            <SelectTrigger className="nodrag nopan h-auto min-h-11 w-full py-1.5">
-              <SelectValue>
-                <span className="min-w-0">
-                  <span className="block truncate text-xs font-semibold">
-                    {selectedModel.aliases.join(" / ")}
-                  </span>
-                  <span className="text-muted-foreground block truncate font-mono text-[0.65rem]">
-                    {selectedModel.officialName}
-                  </span>
-                </span>
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent align="start" className="nodrag nopan min-w-80">
-              {MODEL_CATALOG_GROUPS.map((group) => (
-                <SelectGroup key={group.id}>
-                  <SelectLabel className="font-semibold">{group.label}</SelectLabel>
-                  {group.entries.map((entry) => (
-                    <SelectItem key={entry.id} value={entry.id} disabled={!entry.enabled}>
-                      <span className="flex min-w-0 flex-1 flex-col items-start">
-                        <span className="flex w-full items-center gap-2">
-                          <span className="truncate text-xs font-semibold">
-                            {entry.aliases.join(" / ")}
+        <div className="grid grid-cols-2 gap-2">
+          <div className="flex min-w-0 flex-col gap-1">
+            <span className="text-muted-foreground text-xs">Provider</span>
+            <Select
+              value={provider}
+              onValueChange={(value) => {
+                const nextProvider = value === "gemini" ? "gemini" : "gpt";
+                updateNodeData(id, {
+                  model:
+                    nextProvider === "gemini"
+                      ? geminiModelFor("pro", resolution)
+                      : DEFAULT_IMAGE_GENERATION_MODEL,
+                });
+              }}
+            >
+              <SelectTrigger className="nodrag nopan w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent align="start" className="nodrag nopan">
+                <SelectItem value="gpt">GPT Image</SelectItem>
+                <SelectItem value="gemini">NanoBanana</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex min-w-0 flex-col gap-1">
+            <span className="text-muted-foreground text-xs">Version</span>
+            {provider === "gemini" ? (
+              <Select
+                value={geminiVersion}
+                onValueChange={(value) => {
+                  const nextVersion = value === "1" || value === "2" ? value : "pro";
+                  const nextResolution = nextVersion === "1" ? "preview" : resolution;
+                  updateNodeData(id, {
+                    model: geminiModelFor(nextVersion, nextResolution),
+                    resolution: nextResolution,
+                  });
+                }}
+              >
+                <SelectTrigger className="nodrag nopan w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="start" className="nodrag nopan">
+                  <SelectGroup>
+                    <SelectLabel>Latest first</SelectLabel>
+                    {GEMINI_VERSION_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value} disabled={!option.enabled}>
+                        <span className="flex flex-col items-start">
+                          <span>{option.label}</span>
+                          <span className="text-muted-foreground text-[0.65rem]">
+                            {option.enabled
+                              ? option.description
+                              : option.disabledReason ?? option.description}
                           </span>
-                          {!entry.enabled && (
-                            <Badge variant="outline" className="ml-auto h-4 px-1 text-[0.6rem]">
-                              {entry.capability}
-                            </Badge>
-                          )}
                         </span>
-                        <span className="text-muted-foreground truncate font-mono text-[0.65rem]">
-                          {entry.officialName}
-                        </span>
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              ))}
-            </SelectContent>
-          </Select>
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            ) : (
+              <Select
+                value={model}
+                onValueChange={(value) => {
+                  updateNodeData(id, { model: normalizeImageGenerationModel(value) });
+                }}
+              >
+                <SelectTrigger className="nodrag nopan w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="start" className="nodrag nopan">
+                  <SelectGroup>
+                    <SelectLabel>Latest first</SelectLabel>
+                    {GPT_MODEL_OPTIONS.filter((option) => option.status === "current").map(
+                      (option) => (
+                        <SelectItem
+                          key={option.model}
+                          value={option.model}
+                          disabled={!option.enabled}
+                        >
+                          <span className="flex flex-col items-start">
+                            <span>{option.label}</span>
+                            <span className="text-muted-foreground text-[0.65rem]">
+                              {option.enabled
+                                ? option.description
+                                : option.disabledReason ?? option.description}
+                            </span>
+                          </span>
+                        </SelectItem>
+                      ),
+                    )}
+                  </SelectGroup>
+                  <SelectGroup>
+                    <SelectLabel>Legacy</SelectLabel>
+                    {GPT_MODEL_OPTIONS.filter((option) => option.status === "legacy").map(
+                      (option) => (
+                        <SelectItem
+                          key={option.model}
+                          value={option.model}
+                          disabled={hasGenerationReferences}
+                        >
+                          <span className="flex flex-col items-start">
+                            <span>{option.label}</span>
+                            <span className="text-muted-foreground text-[0.65rem]">
+                              {hasGenerationReferences
+                                ? "Prompt-only only, remove references first"
+                                : option.description}
+                            </span>
+                          </span>
+                        </SelectItem>
+                      ),
+                    )}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            )}
+          </div>
         </div>
+
+        <div className="grid grid-cols-3 gap-2">
+          <div className="flex min-w-0 flex-col gap-1">
+            <span className="text-muted-foreground text-xs">Resolution</span>
+            <Select
+              value={resolution}
+              disabled={provider === "gpt" || geminiVersion === "1"}
+              onValueChange={(value) => {
+                const nextResolution = normalizeImageGenerationResolution(value);
+                updateNodeData(id, {
+                  resolution: nextResolution,
+                  model:
+                    provider === "gemini" ? geminiModelFor(geminiVersion, nextResolution) : model,
+                });
+              }}
+            >
+              <SelectTrigger className="nodrag nopan w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent align="start" className="nodrag nopan">
+                {IMAGE_GENERATION_RESOLUTIONS.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {RESOLUTION_LABELS[option]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex min-w-0 flex-col gap-1">
+            <span className="text-muted-foreground text-xs">Size</span>
+            <Select
+              value={size}
+              onValueChange={(value) => {
+                updateNodeData(id, { size: normalizeImageGenerationSize(value) });
+              }}
+            >
+              <SelectTrigger className="nodrag nopan w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent align="start" className="nodrag nopan">
+                {IMAGE_GENERATION_SIZES.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    <span className="flex flex-col items-start">
+                      <span>{SIZE_LABELS[option]}</span>
+                      <span className="text-muted-foreground font-mono text-[0.65rem]">
+                        {option}
+                      </span>
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex min-w-0 flex-col gap-1">
+            <span className="text-muted-foreground text-xs">Format</span>
+            <Select
+              value={outputFormat}
+              onValueChange={(value) => {
+                updateNodeData(id, {
+                  outputFormat: normalizeImageGenerationOutputFormat(value),
+                });
+              }}
+            >
+              <SelectTrigger className="nodrag nopan w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent align="start" className="nodrag nopan">
+                {IMAGE_GENERATION_OUTPUT_FORMATS.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {FORMAT_LABELS[option]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <p className="text-muted-foreground truncate font-mono text-[0.65rem]">
+          {selectedModel.officialName}
+        </p>
 
         <div className="flex flex-col gap-1">
           <div className="flex min-h-7 items-center justify-between gap-2">
@@ -739,8 +1051,8 @@ export function GenerateNode({ id, data, parentId, selected }: NodeProps<Generat
           title={connectedOutputHasImage ? "Replace output image?" : "Generate image?"}
           description={
             connectedOutputHasImage
-              ? `This will replace the current Output image as soon as generation starts. Download it first if you need to keep it. Run ${selectedModel.aliases[0]} at 1024x1024?`
-              : `Run ${selectedModel.aliases[0]} at 1024x1024? This may use API credits.`
+              ? `This will replace the current Output image as soon as generation starts. Download it first if you need to keep it. Run ${selectedModel.aliases[0]} at ${size}?`
+              : `Run ${selectedModel.aliases[0]} at ${size}? This may use API credits.`
           }
           confirmLabel="Generate"
           destructive={false}
@@ -752,7 +1064,9 @@ export function GenerateNode({ id, data, parentId, selected }: NodeProps<Generat
               disabled={
                 isGenerating ||
                 !hasOutput ||
-                allGenerationReferences.length > MAX_IMAGE_GENERATION_REFERENCES
+                allGenerationReferences.length > MAX_IMAGE_GENERATION_REFERENCES ||
+                currentModelUnavailable ||
+                currentModelBlockedByReferences
               }
               className={cn("w-full", isGenerating && "cursor-not-allowed")}
             >
@@ -772,6 +1086,23 @@ export function GenerateNode({ id, data, parentId, selected }: NodeProps<Generat
         {allGenerationReferences.length > MAX_IMAGE_GENERATION_REFERENCES && (
           <p className="text-xs text-amber-700 dark:text-amber-400">
             Remove references until there are no more than {MAX_IMAGE_GENERATION_REFERENCES}.
+          </p>
+        )}
+        {provider === "gemini" && geminiVersion === "1" && (
+          <p className="text-xs text-amber-700 dark:text-amber-400">
+            NanoBanana 1 is currently unavailable on Xiangsu. Use NanoBanana 2 or Pro.
+          </p>
+        )}
+        {provider === "gpt" && selectedGptOption && !selectedGptOption.enabled && (
+          <p className="text-xs text-amber-700 dark:text-amber-400">
+            {selectedGptOption.label} is currently unavailable on Xiangsu. Use GPT Image 2, 1.5
+            Pro, or 1.
+          </p>
+        )}
+        {provider === "gpt" && currentModelBlockedByReferences && (
+          <p className="text-xs text-amber-700 dark:text-amber-400">
+            DALL-E works only with prompt-only generation. Remove references or switch to a GPT
+            Image model.
           </p>
         )}
         {data.status === "error" && data.error && (

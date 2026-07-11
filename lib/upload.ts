@@ -1,6 +1,7 @@
 "use client";
 
 import { isSupabaseConfigured } from "@/lib/env";
+import type { ImageGenerationOutputFormat } from "@/lib/image-generation-models";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export interface UploadResult {
@@ -9,8 +10,19 @@ export interface UploadResult {
 }
 
 const MAX_DIMENSION = 1280;
-const MIME = "image/webp";
 const QUALITY = 0.85;
+const DEFAULT_FORMAT: ImageGenerationOutputFormat = "webp";
+
+function mimeForFormat(format: ImageGenerationOutputFormat): string {
+  if (format === "png") return "image/png";
+  if (format === "jpeg") return "image/jpeg";
+  return "image/webp";
+}
+
+function extensionForFormat(format: ImageGenerationOutputFormat): string {
+  if (format === "jpeg") return "jpg";
+  return format;
+}
 
 function uid(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -20,9 +32,13 @@ function uid(): string {
 
 /**
  * Decodes the file, scales it down to MAX_DIMENSION on its longest side, and
- * re-encodes as webp. Keeps localStorage (demo mode) and Storage uploads small.
+ * re-encodes using the selected format. Keeps localStorage (demo mode) and
+ * Storage uploads small.
  */
-async function fileToScaled(file: File): Promise<{ dataUrl: string; blob: Blob }> {
+async function fileToScaled(
+  file: File,
+  format: ImageGenerationOutputFormat,
+): Promise<{ dataUrl: string; blob: Blob }> {
   const bitmap = await createImageBitmap(file);
   const scale = Math.min(1, MAX_DIMENSION / Math.max(bitmap.width, bitmap.height));
   const width = Math.max(1, Math.round(bitmap.width * scale));
@@ -36,11 +52,12 @@ async function fileToScaled(file: File): Promise<{ dataUrl: string; blob: Blob }
   ctx.drawImage(bitmap, 0, 0, width, height);
   bitmap.close?.();
 
-  const dataUrl = canvas.toDataURL(MIME, QUALITY);
+  const mime = mimeForFormat(format);
+  const dataUrl = canvas.toDataURL(mime, QUALITY);
   const blob: Blob = await new Promise((resolve, reject) => {
     canvas.toBlob(
       (b) => (b ? resolve(b) : reject(new Error("Failed to encode image"))),
-      MIME,
+      mime,
       QUALITY,
     );
   });
@@ -49,11 +66,14 @@ async function fileToScaled(file: File): Promise<{ dataUrl: string; blob: Blob }
 
 /**
  * Uploads an image and returns a URL + storage path.
- * - Supabase configured: scaled blob → Storage `uploads/<uid>/<id>.webp`, returns public URL.
+ * - Supabase configured: scaled blob -> Storage `uploads/<uid>/<id>.<ext>`, returns public URL.
  * - Local/demo mode: scaled data URL stored directly on the node.
  */
-export async function uploadImage(file: File): Promise<UploadResult> {
-  const { dataUrl, blob } = await fileToScaled(file);
+export async function uploadImage(
+  file: File,
+  format: ImageGenerationOutputFormat = DEFAULT_FORMAT,
+): Promise<UploadResult> {
+  const { dataUrl, blob } = await fileToScaled(file, format);
 
   if (!isSupabaseConfigured) {
     return { url: dataUrl, storagePath: null };
@@ -65,10 +85,10 @@ export async function uploadImage(file: File): Promise<UploadResult> {
   } = await supabase.auth.getUser();
   if (!user) throw new Error("Sign in to upload images.");
 
-  const path = `${user.id}/${uid()}.webp`;
+  const path = `${user.id}/${uid()}.${extensionForFormat(format)}`;
   const { error } = await supabase.storage
     .from("uploads")
-    .upload(path, blob, { contentType: MIME, upsert: false });
+    .upload(path, blob, { contentType: mimeForFormat(format), upsert: false });
   if (error) throw new Error(error.message);
 
   const { data } = supabase.storage.from("uploads").getPublicUrl(path);
@@ -76,10 +96,16 @@ export async function uploadImage(file: File): Promise<UploadResult> {
 }
 
 /** Converts a provider result (data URL or remote URL) into durable app storage. */
-export async function persistGeneratedImage(url: string): Promise<UploadResult> {
+export async function persistGeneratedImage(
+  url: string,
+  format: ImageGenerationOutputFormat = DEFAULT_FORMAT,
+): Promise<UploadResult> {
   const response = await fetch(url);
   if (!response.ok) throw new Error("Failed to read the generated image.");
   const blob = await response.blob();
   const extension = blob.type.includes("png") ? "png" : blob.type.includes("webp") ? "webp" : "jpg";
-  return uploadImage(new File([blob], `generated.${extension}`, { type: blob.type || "image/png" }));
+  return uploadImage(
+    new File([blob], `generated.${extension}`, { type: blob.type || "image/png" }),
+    format,
+  );
 }

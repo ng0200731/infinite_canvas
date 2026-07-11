@@ -245,3 +245,5 @@ $ next dev "--port" "3000"
   249 |         .from("projects")
   250 |         .select("id, name, description, created_at, updated_at")
   251 |         .order("updated_at", { ascending: false }); (chrome-extension://odphnbhiddhdpoccbialllejaajemdio/scripts/inspector.js:7:3407)
+[browser] [React Flow]: It looks like you've created a new nodeTypes or edgeTypes object. If this wasn't on purpose please define the nodeTypes/edgeTypes outside of the component or memoize them. Help: https://reactflow.dev/error#002
+[browser] [React Flow]: It looks like you've created a new nodeTypes or edgeTypes object. If this wasn't on purpose please define the nodeTypes/edgeTypes outside of the component or memoize them. Help: https://reactflow.dev/error#002

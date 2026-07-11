@@ -8,6 +8,9 @@ const vintageDataUrl = "data:image/png;base64,dmludGFnZQ==";
 const input = {
   model: "gpt-image-2" as const,
   prompt: "A precise product photograph",
+  size: "1024x1024" as const,
+  outputFormat: "webp" as const,
+  resolution: "preview" as const,
   references: [],
 };
 
@@ -39,7 +42,7 @@ describe("Xiangsu image generator", () => {
 
     const [, request] = fetcher.mock.calls[0];
     expect(request?.headers).toEqual({
-      Authorization: "secret",
+      Authorization: "Bearer secret",
       "Content-Type": "application/json",
     });
     expect(JSON.parse(String(request?.body))).toEqual({
@@ -47,6 +50,9 @@ describe("Xiangsu image generator", () => {
       prompt: input.prompt,
       n: 1,
       size: "1024x1024",
+      background: "auto",
+      quality: "auto",
+      output_format: "webp",
     });
   });
 
@@ -69,10 +75,13 @@ describe("Xiangsu image generator", () => {
     const form = formDataBody(request?.body);
     const images = form.getAll("image");
     expect(url).toBe("https://www.xiangsuai.cn/v1/images/edits");
-    expect(request?.headers).toEqual({ Authorization: "secret" });
+    expect(request?.headers).toEqual({ Authorization: "Bearer secret" });
     expect(stringFormValue(form, "model")).toBe("gpt-image-2");
     expect(stringFormValue(form, "n")).toBe("1");
     expect(stringFormValue(form, "size")).toBe("1024x1024");
+    expect(stringFormValue(form, "background")).toBe("auto");
+    expect(stringFormValue(form, "quality")).toBe("auto");
+    expect(stringFormValue(form, "output_format")).toBe("webp");
     expect(images).toHaveLength(2);
     expect(images[0]).toBeInstanceOf(Blob);
     expect(images[1]).toBeInstanceOf(Blob);
@@ -117,26 +126,41 @@ describe("Xiangsu image generator", () => {
   it("uses the native Gemini endpoint and parses its inline image", async () => {
     const fetcher = vi
       .fn<typeof fetch>()
-      .mockResolvedValue(Response.json({ candidates: [{ content: { parts: [
-        { inlineData: { mimeType: "image/png", data: "aW1hZ2U=" } },
-      ] } }] }));
+      .mockResolvedValue(
+        Response.json({
+          candidates: [
+            { content: { parts: [{ inlineData: { mimeType: "image/png", data: "aW1hZ2U=" } }] } },
+          ],
+        }),
+      );
     const generate = createXiangsuImageGenerator({ apiKey: "secret", fetcher });
 
-    await expect(generate({
+    await expect(
+      generate({
+        model: "gemini-3.1-flash-image-preview",
+        prompt: "change @sweater color to @Yellow C",
+        size: "1536x1024",
+        outputFormat: "png",
+        resolution: "2K",
+        references: [
+          { kind: "image", alias: "sweater", url: sweaterDataUrl },
+          { kind: "pantone", alias: "Yellow C", label: "Yellow C", hex: "#fedd00" },
+        ],
+      }),
+    ).resolves.toEqual({
+      url: "data:image/png;base64,aW1hZ2U=",
       model: "gemini-3.1-flash-image-preview",
-      prompt: "change @sweater color to @Yellow C",
-      references: [
-        { kind: "image", alias: "sweater", url: sweaterDataUrl },
-        { kind: "pantone", alias: "Yellow C", label: "Yellow C", hex: "#fedd00" },
-      ],
-    })).resolves.toEqual({
-      url: "data:image/png;base64,aW1hZ2U=", model: "gemini-3.1-flash-image-preview",
     });
     const [url, request] = fetcher.mock.calls.at(-1) ?? [];
-    expect(url).toBe("https://www.xiangsuai.cn/v1beta/models/gemini-3.1-flash-image-preview:generateContent");
+    expect(url).toBe(
+      "https://www.xiangsuai.cn/v1beta/models/gemini-3.1-flash-image-preview:generateContent",
+    );
     expect((request?.headers as Record<string, string>).Authorization).toBe("Bearer secret");
-    const body = JSON.parse(String(request?.body)) as { generationConfig: { imageConfig: { imageSize: string } } };
-    expect(body.generationConfig.imageConfig.imageSize).toBe("1K");
+    const body = JSON.parse(String(request?.body)) as {
+      generationConfig: { imageConfig: { aspectRatio: string; imageSize: string } };
+    };
+    expect(body.generationConfig.imageConfig.aspectRatio).toBe("3:2");
+    expect(body.generationConfig.imageConfig.imageSize).toBe("2K");
   });
 
   it("accepts a remote image URL", async () => {

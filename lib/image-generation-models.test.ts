@@ -5,7 +5,13 @@ import {
   IMAGE_GENERATION_MODEL_IDS,
   MODEL_CATALOG,
   MODEL_CATALOG_GROUPS,
+  aspectRatioForImageGenerationSize,
+  geminiImageSizeForResolution,
+  normalizeImageGenerationOutputFormat,
+  normalizeImageGenerationResolution,
+  normalizeImageGenerationSize,
   normalizeImageGenerationModel,
+  resolutionForImageGenerationModel,
 } from "@/lib/image-generation-models";
 
 describe("image generation model catalog", () => {
@@ -49,5 +55,17 @@ describe("image generation model catalog", () => {
     expect(normalizeImageGenerationModel("flux-kontext")).toBe("gpt-image-2");
     expect(normalizeImageGenerationModel("gpt-5.4")).toBe("gpt-image-2");
     expect(normalizeImageGenerationModel("gemini-2.5-flash-image")).toBe("gemini-2.5-flash-image");
+  });
+
+  it("normalizes image generation settings", () => {
+    expect(normalizeImageGenerationSize("1536x1024")).toBe("1536x1024");
+    expect(normalizeImageGenerationSize("bad")).toBe("1024x1024");
+    expect(normalizeImageGenerationOutputFormat("png")).toBe("png");
+    expect(normalizeImageGenerationOutputFormat("gif")).toBe("webp");
+    expect(normalizeImageGenerationResolution("4K")).toBe("4K");
+    expect(normalizeImageGenerationResolution("8K")).toBe("preview");
+    expect(resolutionForImageGenerationModel("gemini-3-pro-image-preview-2K")).toBe("2K");
+    expect(geminiImageSizeForResolution("preview")).toBe("1K");
+    expect(aspectRatioForImageGenerationSize("1024x1536")).toBe("2:3");
   });
 });

@@ -4,6 +4,11 @@ import { createContext, useContext, type CSSProperties } from "react";
 import { useReactFlow } from "@xyflow/react";
 
 import { DEFAULT_EDGE_COLOR } from "@/lib/nodes/ports";
+import type {
+  ImageGenerationOutputFormat,
+  ImageGenerationResolution,
+  ImageGenerationSize,
+} from "@/lib/image-generation-models";
 
 export interface ConnectedImageReference {
   edgeId: string;
@@ -30,6 +35,7 @@ export interface ConnectedOutputState {
   resultUrl: string | null;
   prompt?: string;
   model?: string;
+  outputFormat?: ImageGenerationOutputFormat;
   status: "idle" | "loading" | "error" | "done";
   error?: string;
 }
@@ -49,7 +55,14 @@ export interface CanvasActions {
   writeGeneratedImageToOutput: (
     generateNodeId: string,
     url: string,
-    meta: { prompt: string; model: string; storagePath: string | null },
+    meta: {
+      prompt: string;
+      model: string;
+      size: ImageGenerationSize;
+      resolution: ImageGenerationResolution;
+      outputFormat: ImageGenerationOutputFormat;
+      storagePath: string | null;
+    },
   ) => boolean;
   /** Remove a node and any wires connected to it. */
   deleteNode: (id: string) => void;
