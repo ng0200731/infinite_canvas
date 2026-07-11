@@ -1,0 +1,7 @@
+▲ Next.js 16.2.9 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.31.31:3000
+- Environments: .env.local
+✓ Ready in 759ms
+Creating turbopack project { dir: 'D:\\project\\trial-2026-infinite-canvas', testMode: true }
+

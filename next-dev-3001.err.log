@@ -1,8 +1,48 @@
-⨯ Another next dev server is already running.
+$ next dev "--port" "3001"
+[browser] Uncaught Error: Hydration failed because the server rendered HTML didn't match the client. As a result this tree will be regenerated on the client. This can happen if a SSR-ed Client Component used:
 
-- Local:        http://localhost:3000
-- PID:          15900
-- Dir:          D:\project\trial-2026-infinite-canvas
-- Log:          .next\dev\logs\next-development.log
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
 
-Run taskkill /PID 15900 /F to stop it.
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+https://react.dev/link/hydration-mismatch
+
+  ...
+    <ErrorBoundary errorComponent={undefined} errorStyles={undefined} errorScripts={undefined}>
+      <LoadingBoundary name="recovery/" loading={null}>
+        <HTTPAccessFallbackBoundary notFound={undefined} forbidden={undefined} unauthorized={undefined}>
+          <RedirectBoundary>
+            <RedirectErrorBoundary router={{...}}>
+              <InnerLayoutRouter url="/recovery" tree={[...]} params={{}} cacheNode={{rsc:{...}, ...}} ...>
+                <SegmentViewNode type="page" pagePath="recovery/p...">
+                  <SegmentTrieNode>
+                  <RecoveryPage>
+                    <LocalRecoveryPanel>
+                      <main className="min-h-scre...">
+                        <section className="mx-auto ma...">
+                          <div className="mb-10 flex...">
+                            <div>
+                              <p className="mb-3 font-...">
++                               http://localhost:3001
+                              ...
+                            ...
+                          ...
+                ...
+              ...
+
+    at <unknown> (https://react.dev/link/hydration-mismatch)
+    at <unknown> (+                               http://localhost:3001)
+    at p (<anonymous>)
+    at LocalRecoveryPanel (components/recovery/local-recovery-panel.tsx:71:14)
+    at RecoveryPage (app\recovery\page.tsx:4:10)
+  69 |     <section className="mx-auto max-w-5xl">
+  70 |       <div className="mb-10 flex items-start justify-between gap-6 border-b pb-8">
+> 71 |         <div><p className="mb-3 font-mono text-xs uppercase tracking-[0.25em] text-muted-f...
+     |              ^
+  72 |         <div className="rounded-full border p-3"><Archive className="size-6" /></div>
+  73 |       </div>
+  74 |       {archive ? <ArchiveCounts archive={archive} /> : <div className="h-24 animate-pulse ...

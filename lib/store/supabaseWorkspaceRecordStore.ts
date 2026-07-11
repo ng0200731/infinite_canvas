@@ -3,13 +3,15 @@ import { z } from "zod";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import {
   customerRecordInputSchema,
+  getProductPriceUnit,
+  normalizeProductParameters,
+  normalizeSupplierProductType,
+  normalizeSupplierProductTypes,
   productRecordInputSchema,
-  supplierProductTypes,
   supplierRecordInputSchema,
   type CustomerRecord,
   type ProductImageInput,
   type ProductRecord,
-  type SupplierProductType,
   type SupplierRecord,
 } from "@/lib/workspace-records";
 
@@ -37,17 +39,21 @@ const supplierRowSchema = z.object({
   id: z.string(),
   company_name: z.string(),
   email_domain_suffix: z.string(),
-  product_types: z.array(z.enum(supplierProductTypes)),
+  product_types: z.array(z.string()),
   created_at: z.string(),
   updated_at: z.string(),
 });
 
 const productRowSchema = z.object({
   id: z.string(),
+  product_type: z.string().nullable().optional(),
   subject: z.string(),
   detail: z.string(),
   material: z.string(),
   color_notes: z.string(),
+  parameters: z.unknown().nullable().optional(),
+  unit_price: z.string().nullable().optional(),
+  price_unit: z.string().nullable().optional(),
   image_name: z.string().nullable(),
   image_url: z.string().nullable(),
   image_storage_path: z.string().nullable(),
@@ -112,7 +118,7 @@ function mapSupplier(rowValue: unknown, employeeRows: unknown): SupplierRecord {
     company: {
       companyName: row.company_name,
       emailDomainSuffix: row.email_domain_suffix,
-      productTypes: row.product_types as SupplierProductType[],
+      productTypes: normalizeSupplierProductTypes(row.product_types),
     },
     employees: mapEmployees(employeeRows),
     createdAt: row.created_at,
@@ -122,12 +128,17 @@ function mapSupplier(rowValue: unknown, employeeRows: unknown): SupplierRecord {
 
 function mapProduct(rowValue: unknown): ProductRecord {
   const row = productRowSchema.parse(rowValue);
+  const productType = normalizeSupplierProductType(row.product_type);
   return {
     id: row.id,
+    productType,
     subject: row.subject,
     detail: row.detail,
     material: row.material,
     colorNotes: row.color_notes,
+    parameters: normalizeProductParameters(row.parameters),
+    unitPrice: row.unit_price?.trim() ? row.unit_price : "0",
+    priceUnit: row.price_unit?.trim() ? row.price_unit : getProductPriceUnit(productType),
     image: imageFromRow(row),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -207,7 +218,7 @@ export function createSupabaseWorkspaceRecordStore(): WorkspaceRecordStore {
       const { data, error } = await supabase
         .from("products")
         .select(
-          "id, subject, detail, material, color_notes, image_name, image_url, image_storage_path, created_at, updated_at",
+          "id, product_type, subject, detail, material, color_notes, parameters, unit_price, price_unit, image_name, image_url, image_storage_path, created_at, updated_at",
         )
         .order("updated_at", { ascending: false });
       assertNoError({ error }, "listProducts");
@@ -219,17 +230,21 @@ export function createSupabaseWorkspaceRecordStore(): WorkspaceRecordStore {
       const userId = await getCurrentUserId();
       const row = {
         user_id: userId,
+        product_type: parsed.productType,
         subject: parsed.subject,
         detail: parsed.detail,
         material: parsed.material,
         color_notes: parsed.colorNotes,
+        parameters: parsed.parameters,
+        unit_price: parsed.unitPrice,
+        price_unit: parsed.priceUnit,
         image_name: parsed.image?.name ?? null,
         image_url: parsed.image?.url ?? null,
         image_storage_path: parsed.image?.storagePath ?? null,
         updated_at: new Date().toISOString(),
       };
       const selection =
-        "id, subject, detail, material, color_notes, image_name, image_url, image_storage_path, created_at, updated_at";
+        "id, product_type, subject, detail, material, color_notes, parameters, unit_price, price_unit, image_name, image_url, image_storage_path, created_at, updated_at";
       const { data, error } = id
         ? await supabase.from("products").update(row).eq("id", id).select(selection).single()
         : await supabase.from("products").insert(row).select(selection).single();

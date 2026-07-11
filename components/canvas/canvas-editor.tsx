@@ -90,6 +90,7 @@ const AUTOSAVE_DEBOUNCE_MS = 600;
 const NEW_NODE_DISPLACEMENT = 32;
 const POSITION_EPSILON = 1;
 const MAX_PLACEMENT_PROBES = 40;
+const FIELD_FOCUS_RETRIES = 12;
 
 type HoverTarget = {
   kind: "node" | "edge";
@@ -201,6 +202,47 @@ function appendSelectedNode(nodes: CanvasNode[], node: CanvasNode): CanvasNode[]
       ...node,
       selected: true,
     });
+}
+
+function nodeNeedsInitialFieldFocus(type: NodeType): boolean {
+  return type === "imageInput" || type === "pantone";
+}
+
+function focusNewNodeField(nodeId: string) {
+  let attempts = 0;
+
+  function focusField(field: HTMLInputElement) {
+    field.focus({ preventScroll: true });
+    field.select();
+
+    for (const delay of [0, 80]) {
+      window.setTimeout(() => {
+        if (document.activeElement !== field) {
+          field.focus({ preventScroll: true });
+          field.select();
+        }
+      }, delay);
+    }
+  }
+
+  function tryFocus() {
+    attempts += 1;
+    const nodeElement = document.querySelector<HTMLElement>(
+      `.react-flow__node[data-id="${nodeId}"]`,
+    );
+    const field = nodeElement?.querySelector<HTMLInputElement>("[data-new-node-focus-field]");
+
+    if (field) {
+      focusField(field);
+      return;
+    }
+
+    if (attempts < FIELD_FOCUS_RETRIES) {
+      window.requestAnimationFrame(tryFocus);
+    }
+  }
+
+  window.requestAnimationFrame(tryFocus);
 }
 
 function findConnectedOutputNodeId(
@@ -831,18 +873,26 @@ function Editor({
     [setCanvasNodes],
   );
 
+  const addNodeAtPosition = useCallback(
+    (type: NodeType, position: XYPosition) => {
+      const node = createNode(type, findNewNodePosition(position, nodesRef.current));
+      setCanvasNodes((nds) => appendSelectedNode(nds, node));
+      if (nodeNeedsInitialFieldFocus(type)) {
+        focusNewNodeField(node.id);
+      }
+    },
+    [setCanvasNodes],
+  );
+
   const addNodeAtCenter = useCallback(
     (type: NodeType) => {
       const position = screenToFlowPosition({
         x: window.innerWidth / 2,
         y: window.innerHeight / 2,
       });
-      setCanvasNodes((nds) => {
-        const node = createNode(type, findNewNodePosition(position, nds));
-        return appendSelectedNode(nds, node);
-      });
+      addNodeAtPosition(type, position);
     },
-    [screenToFlowPosition, setCanvasNodes],
+    [addNodeAtPosition, screenToFlowPosition],
   );
 
   const onDrop = useCallback(
@@ -854,12 +904,9 @@ function Editor({
         x: event.clientX,
         y: event.clientY,
       });
-      setCanvasNodes((nds) => {
-        const node = createNode(type, findNewNodePosition(position, nds));
-        return appendSelectedNode(nds, node);
-      });
+      addNodeAtPosition(type, position);
     },
-    [screenToFlowPosition, setCanvasNodes],
+    [addNodeAtPosition, screenToFlowPosition],
   );
 
   const nodeTypes = useMemo<NodeTypes>(

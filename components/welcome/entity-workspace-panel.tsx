@@ -1,15 +1,15 @@
 "use client";
 
-import { useId, useMemo, useState } from "react";
+import { useId, useState } from "react";
 import type { ChangeEvent, ClipboardEvent, DragEvent, ReactNode } from "react";
 import {
   Building2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  FolderOpen,
   ImagePlus,
   Pencil,
-  Plus,
   Save,
   Search,
   Trash2,
@@ -22,21 +22,34 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import {
   customerCompanySchema,
+  defaultSupplierProductType,
   employeeSchema,
+  getProductPriceUnit,
   hadAtSymbol,
   normalizeEmailDomainSuffix,
+  normalizeSupplierProductTypes,
+  normalizeSupplierProductType,
   productSchema,
   supplierCompanySchema,
   supplierProductTypeLabels,
@@ -62,7 +75,7 @@ import { cn } from "@/lib/utils";
 
 type EntityKind = "customer" | "supplier" | "product";
 type PartyKind = "customer" | "supplier";
-type PartySubTab = "company" | "employee";
+type PartySubTab = "company" | "employee" | "product";
 
 interface EmployeeRow extends EmployeeInput {
   id: string;
@@ -81,10 +94,14 @@ interface ProductImageState {
 }
 
 interface ProductFormState {
+  productType: SupplierProductType;
   subject: string;
   detail: string;
   material: string;
   colorNotes: string;
+  parameters: Record<string, string>;
+  unitPrice: string;
+  priceUnit: string;
   image: ProductImageState | null;
 }
 
@@ -181,23 +198,177 @@ const dummyCustomerCompanies: CustomerCompanyState[] = [
     emailDomainSuffix: "harborlineretail.com",
     type: "Buying office",
   },
+  {
+    companyName: "Juniper Activewear",
+    emailDomainSuffix: "juniperactivewear.com",
+    type: "Brand owner",
+  },
+  {
+    companyName: "Atlas Department Stores",
+    emailDomainSuffix: "atlasstores.com",
+    type: "Retailer",
+  },
+  { companyName: "Willow & Loom", emailDomainSuffix: "willowandloom.com", type: "Brand owner" },
+  {
+    companyName: "Redwood Sourcing Partners",
+    emailDomainSuffix: "redwoodsourcing.com",
+    type: "Sourcing agent",
+  },
+  {
+    companyName: "Summit Outdoor Goods",
+    emailDomainSuffix: "summitoutdoorgoods.com",
+    type: "Brand owner",
+  },
+  {
+    companyName: "Evergreen Kidswear",
+    emailDomainSuffix: "evergreenkidswear.com",
+    type: "Brand owner",
+  },
+  {
+    companyName: "Mosaic Fashion Group",
+    emailDomainSuffix: "mosaicfashiongroup.com",
+    type: "Distributor",
+  },
+  {
+    companyName: "Bluebird Uniforms",
+    emailDomainSuffix: "bluebirduniforms.com",
+    type: "Uniform supplier",
+  },
+  { companyName: "Oak & Thread Co.", emailDomainSuffix: "oakandthread.com", type: "Retailer" },
+  {
+    companyName: "Meridian Buying House",
+    emailDomainSuffix: "meridianbuying.com",
+    type: "Buying office",
+  },
+  {
+    companyName: "Fieldstone Workwear",
+    emailDomainSuffix: "fieldstoneworkwear.com",
+    type: "Brand owner",
+  },
+  {
+    companyName: "Nova Sports Collective",
+    emailDomainSuffix: "novasportscollective.com",
+    type: "Distributor",
+  },
+  {
+    companyName: "Riverside Essentials",
+    emailDomainSuffix: "riversideessentials.com",
+    type: "Retailer",
+  },
+  {
+    companyName: "Cedar Lane Apparel",
+    emailDomainSuffix: "cedarlaneapparel.com",
+    type: "Brand owner",
+  },
+  { companyName: "Orbit Fashion Imports", emailDomainSuffix: "orbitfashion.com", type: "Importer" },
+  { companyName: "Canvas & Coast", emailDomainSuffix: "canvasandcoast.com", type: "Brand owner" },
+  {
+    companyName: "Sterling Private Label",
+    emailDomainSuffix: "sterlinglabel.com",
+    type: "Private label",
+  },
 ];
 
 const dummySupplierCompanies: SupplierCompanyState[] = [
   {
     companyName: "Bright Trim Manufacturing",
     emailDomainSuffix: "brighttrim.com",
-    productTypes: ["label", "tag", "zipper"],
+    productTypes: ["woven-label", "wash-care-label", "hang-tag"],
   },
   {
     companyName: "Metro Embroidery Works",
     emailDomainSuffix: "metroembroidery.com",
-    productTypes: ["embroidery-patch", "snap"],
+    productTypes: ["embroidery-patch", "silicon-patch", "heat-transfer"],
   },
   {
     companyName: "Pearl Packaging Supply",
     emailDomainSuffix: "pearlpackaging.com",
-    productTypes: ["tag", "label"],
+    productTypes: ["polybag", "thread", "button"],
+  },
+  {
+    companyName: "Apex Label Industries",
+    emailDomainSuffix: "apexlabels.com",
+    productTypes: ["woven-label", "wash-care-label"],
+  },
+  {
+    companyName: "Golden Card Printing",
+    emailDomainSuffix: "goldencardprint.com",
+    productTypes: ["hang-tag", "polybag"],
+  },
+  {
+    companyName: "Vertex Transfer Lab",
+    emailDomainSuffix: "vertextransfer.com",
+    productTypes: ["heat-transfer", "silicon-patch"],
+  },
+  {
+    companyName: "Unity Elastic Mills",
+    emailDomainSuffix: "unityelastic.com",
+    productTypes: ["elastic", "drawcord"],
+  },
+  {
+    companyName: "Crown Metal Trims",
+    emailDomainSuffix: "crownmetaltrims.com",
+    productTypes: ["metal", "button"],
+  },
+  {
+    companyName: "Heritage Patch Studio",
+    emailDomainSuffix: "heritagepatch.com",
+    productTypes: ["pu-patch", "embroidery-patch"],
+  },
+  {
+    companyName: "Pioneer Thread Works",
+    emailDomainSuffix: "pioneerthread.com",
+    productTypes: ["thread", "embroidery-patch"],
+  },
+  {
+    companyName: "ClearPack Solutions",
+    emailDomainSuffix: "clearpacksolutions.com",
+    productTypes: ["polybag"],
+  },
+  {
+    companyName: "Evermark Accessories",
+    emailDomainSuffix: "evermarkaccessories.com",
+    productTypes: ["woven-label", "hang-tag", "button"],
+  },
+  {
+    companyName: "Formosa Cord & Tape",
+    emailDomainSuffix: "formosacord.com",
+    productTypes: ["elastic", "drawcord"],
+  },
+  {
+    companyName: "Northfield Branding",
+    emailDomainSuffix: "northfieldbranding.com",
+    productTypes: ["heat-transfer", "pu-patch"],
+  },
+  {
+    companyName: "Precision Eyelet Co.",
+    emailDomainSuffix: "precisioneyelet.com",
+    productTypes: ["metal"],
+  },
+  {
+    companyName: "SoftTouch Label Co.",
+    emailDomainSuffix: "softtouchlabel.com",
+    productTypes: ["woven-label", "wash-care-label"],
+  },
+  {
+    companyName: "Blue Peak Embroidery",
+    emailDomainSuffix: "bluepeakembroidery.com",
+    productTypes: ["embroidery-patch", "thread"],
+  },
+  {
+    companyName: "EcoTrim Materials",
+    emailDomainSuffix: "ecotrimmaterials.com",
+    productTypes: ["button", "polybag", "pu-patch"],
+  },
+  {
+    companyName: "Signal Silicone Works",
+    emailDomainSuffix: "signalsilicone.com",
+    productTypes: ["silicon-patch", "heat-transfer"],
+  },
+  {
+    companyName: "Keystone Tag & Label",
+    emailDomainSuffix: "keystonetag.com",
+    productTypes: ["hang-tag", "wash-care-label"],
   },
 ];
 
@@ -216,6 +387,132 @@ const dummyEmployees: EmployeeRow[] = [
     title: "Production Coordinator",
     tel: "+86 755 8821 1043",
   },
+  {
+    id: "dummy-employee-3",
+    userName: "Sofia Martinez",
+    emailPrefix: "sofia.martinez",
+    title: "Senior Buyer",
+    tel: "+1 212 555 0141",
+  },
+  {
+    id: "dummy-employee-4",
+    userName: "Noah Williams",
+    emailPrefix: "noah.williams",
+    title: "Product Developer",
+    tel: "+44 20 7946 0182",
+  },
+  {
+    id: "dummy-employee-5",
+    userName: "Aisha Rahman",
+    emailPrefix: "aisha.rahman",
+    title: "Sourcing Director",
+    tel: "+971 4 555 0183",
+  },
+  {
+    id: "dummy-employee-6",
+    userName: "Lucas Silva",
+    emailPrefix: "lucas.silva",
+    title: "Quality Manager",
+    tel: "+55 11 5550 0184",
+  },
+  {
+    id: "dummy-employee-7",
+    userName: "Emma Johnson",
+    emailPrefix: "emma.johnson",
+    title: "Assistant Buyer",
+    tel: "+1 312 555 0185",
+  },
+  {
+    id: "dummy-employee-8",
+    userName: "Kenji Sato",
+    emailPrefix: "kenji.sato",
+    title: "Materials Specialist",
+    tel: "+81 3 5550 0186",
+  },
+  {
+    id: "dummy-employee-9",
+    userName: "Priya Nair",
+    emailPrefix: "priya.nair",
+    title: "Category Manager",
+    tel: "+91 22 5550 0187",
+  },
+  {
+    id: "dummy-employee-10",
+    userName: "Oliver Brown",
+    emailPrefix: "oliver.brown",
+    title: "Supply Chain Lead",
+    tel: "+44 161 555 0188",
+  },
+  {
+    id: "dummy-employee-11",
+    userName: "Hana Kim",
+    emailPrefix: "hana.kim",
+    title: "Design Coordinator",
+    tel: "+82 2 555 0189",
+  },
+  {
+    id: "dummy-employee-12",
+    userName: "Ethan Davis",
+    emailPrefix: "ethan.davis",
+    title: "Procurement Manager",
+    tel: "+1 415 555 0190",
+  },
+  {
+    id: "dummy-employee-13",
+    userName: "Lea Dubois",
+    emailPrefix: "lea.dubois",
+    title: "Brand Manager",
+    tel: "+33 1 55 50 0191",
+  },
+  {
+    id: "dummy-employee-14",
+    userName: "Amir Haddad",
+    emailPrefix: "amir.haddad",
+    title: "Operations Manager",
+    tel: "+971 2 555 0192",
+  },
+  {
+    id: "dummy-employee-15",
+    userName: "Isabella Rossi",
+    emailPrefix: "isabella.rossi",
+    title: "Packaging Developer",
+    tel: "+39 02 555 0193",
+  },
+  {
+    id: "dummy-employee-16",
+    userName: "Liam Wilson",
+    emailPrefix: "liam.wilson",
+    title: "Merchandiser",
+    tel: "+61 2 5550 0194",
+  },
+  {
+    id: "dummy-employee-17",
+    userName: "Mei Lin",
+    emailPrefix: "mei.lin",
+    title: "Production Manager",
+    tel: "+86 21 5550 0195",
+  },
+  {
+    id: "dummy-employee-18",
+    userName: "Mateo Garcia",
+    emailPrefix: "mateo.garcia",
+    title: "Technical Designer",
+    tel: "+34 91 555 0196",
+  },
+  {
+    id: "dummy-employee-19",
+    userName: "Chloe Taylor",
+    emailPrefix: "chloe.taylor",
+    title: "Compliance Lead",
+    tel: "+44 20 7946 0197",
+  },
+  {
+    id: "dummy-employee-20",
+    userName: "Daniel Park",
+    emailPrefix: "daniel.park",
+    title: "Account Manager",
+    tel: "+82 2 555 0198",
+  },
 ];
 
 function createDummyEmployee(index: number): EmployeeRow {
@@ -232,32 +529,511 @@ function createDummyEmployee(index: number): EmployeeRow {
   };
 }
 
-const dummyProducts: ProductFormState[] = [
-  {
-    subject: "Woven label set for summer capsule",
-    detail:
-      "Main neck label, care label, and hang tag package. Match soft-hand finish and keep colors within approved Pantone range.",
-    material: "Damask woven polyester, 80D",
-    colorNotes: "Black ground, warm white logo, copper accent thread",
-    image: null,
+interface ProductParameterField {
+  key: string;
+  label: string;
+  placeholder: string;
+}
+
+interface ProductParameterDummySet {
+  parameters: Record<string, string>;
+  unitPrice: string;
+}
+
+interface ProductParameterTemplate {
+  fields: ProductParameterField[];
+  dummySets: ProductParameterDummySet[];
+}
+
+const productParameterTemplates: Record<SupplierProductType, ProductParameterTemplate> = {
+  "woven-label": {
+    fields: [
+      { key: "width", label: "Width", placeholder: "45 mm" },
+      { key: "height", label: "Height", placeholder: "20 mm" },
+      { key: "fold", label: "Fold", placeholder: "Center fold, end fold..." },
+      { key: "weave", label: "Weave", placeholder: "Damask, satin, taffeta" },
+      { key: "backing", label: "Backing", placeholder: "Sew-on, iron-on, adhesive" },
+    ],
+    dummySets: [
+      {
+        parameters: {
+          width: "45 mm",
+          height: "20 mm",
+          fold: "Center fold",
+          weave: "Damask woven polyester",
+          backing: "Sew-on edge",
+        },
+        unitPrice: "0.032",
+      },
+      {
+        parameters: {
+          width: "60 mm",
+          height: "18 mm",
+          fold: "End fold",
+          weave: "Satin woven",
+          backing: "Soft heat-cut edge",
+        },
+        unitPrice: "0.041",
+      },
+    ],
   },
-  {
-    subject: "Matte paper hang tag program",
-    detail:
-      "Two-size tag set with reinforced eyelets, cotton cord, and barcode area reserved on the reverse side.",
-    material: "450gsm matte art card",
-    colorNotes: "Ivory stock, charcoal print, muted green accent",
-    image: null,
+  "wash-care-label": {
+    fields: [
+      { key: "width", label: "Width", placeholder: "35 mm" },
+      { key: "height", label: "Height", placeholder: "70 mm" },
+      { key: "material", label: "Material", placeholder: "Satin, nylon, cotton tape" },
+      { key: "print", label: "Print", placeholder: "Black single side, double side..." },
+      { key: "content", label: "Content", placeholder: "Care symbols, fiber, origin" },
+    ],
+    dummySets: [
+      {
+        parameters: {
+          width: "35 mm",
+          height: "70 mm",
+          material: "White satin tape",
+          print: "Black double-side print",
+          content: "Care symbols, fiber content, COO",
+        },
+        unitPrice: "0.018",
+      },
+      {
+        parameters: {
+          width: "30 mm",
+          height: "60 mm",
+          material: "Recycled nylon tape",
+          print: "One-side thermal transfer",
+          content: "Wash icons, batch code, QR care link",
+        },
+        unitPrice: "0.021",
+      },
+    ],
   },
-  {
-    subject: "Antique brass snap sample",
-    detail:
-      "Logo-engraved snap set for outerwear trial. Confirm pull strength and plating consistency before bulk approval.",
-    material: "Brass alloy with antique finish",
-    colorNotes: "Aged brass, low shine, black enamel logo fill",
-    image: null,
+  "hang-tag": {
+    fields: [
+      { key: "width", label: "Width", placeholder: "55 mm" },
+      { key: "height", label: "Height", placeholder: "90 mm" },
+      { key: "paper", label: "Paper", placeholder: "350gsm art card, kraft..." },
+      { key: "finish", label: "Finish", placeholder: "Matte lamination, spot UV..." },
+      { key: "attachment", label: "Attachment", placeholder: "Hole, eyelet, string, pin" },
+    ],
+    dummySets: [
+      {
+        parameters: {
+          width: "55 mm",
+          height: "90 mm",
+          paper: "450gsm matte art card",
+          finish: "Matte lamination with round corners",
+          attachment: "4 mm hole with cotton string",
+        },
+        unitPrice: "0.075",
+      },
+      {
+        parameters: {
+          width: "60 mm",
+          height: "100 mm",
+          paper: "600gsm black core card",
+          finish: "Embossed logo and spot UV",
+          attachment: "Metal eyelet with safety pin",
+        },
+        unitPrice: "0.128",
+      },
+    ],
   },
-];
+  "heat-transfer": {
+    fields: [
+      { key: "width", label: "Width", placeholder: "80 mm" },
+      { key: "height", label: "Height", placeholder: "40 mm" },
+      { key: "film", label: "Film", placeholder: "PU, silicone, reflective..." },
+      { key: "application", label: "Application", placeholder: "Temp / time / pressure" },
+      { key: "wash", label: "Wash resistance", placeholder: "40C, 60C, dry clean..." },
+    ],
+    dummySets: [
+      {
+        parameters: {
+          width: "80 mm",
+          height: "40 mm",
+          film: "Matte PU transfer",
+          application: "150C / 12 sec / medium pressure",
+          wash: "40C wash, 25 cycles",
+        },
+        unitPrice: "0.19",
+      },
+      {
+        parameters: {
+          width: "120 mm",
+          height: "55 mm",
+          film: "Reflective heat transfer",
+          application: "145C / 15 sec / firm pressure",
+          wash: "60C wash, 20 cycles",
+        },
+        unitPrice: "0.34",
+      },
+    ],
+  },
+  elastic: {
+    fields: [
+      { key: "width", label: "Width", placeholder: "25 mm" },
+      { key: "material", label: "Material", placeholder: "Polyester / spandex" },
+      { key: "stretch", label: "Stretch / recovery", placeholder: "120% stretch, 95% recovery" },
+      { key: "length", label: "Length", placeholder: "Roll length or cut length" },
+    ],
+    dummySets: [
+      {
+        parameters: {
+          width: "25 mm",
+          material: "Polyester / spandex jacquard",
+          stretch: "120% stretch, 95% recovery",
+          length: "100 m roll",
+        },
+        unitPrice: "0.42",
+      },
+      {
+        parameters: {
+          width: "38 mm",
+          material: "Nylon covered spandex",
+          stretch: "150% stretch, 92% recovery",
+          length: "Cut to 720 mm per garment",
+        },
+        unitPrice: "0.68",
+      },
+    ],
+  },
+  drawcord: {
+    fields: [
+      { key: "diameter", label: "Diameter", placeholder: "5 mm" },
+      { key: "material", label: "Material", placeholder: "Cotton, polyester, nylon" },
+      { key: "tip", label: "Tip / aglet", placeholder: "Metal, plastic, heat sealed" },
+      { key: "length", label: "Length", placeholder: "130 cm" },
+    ],
+    dummySets: [
+      {
+        parameters: {
+          diameter: "5 mm",
+          material: "Round polyester cord",
+          tip: "Matte black metal aglet",
+          length: "130 cm cut length",
+        },
+        unitPrice: "0.55",
+      },
+      {
+        parameters: {
+          diameter: "8 mm",
+          material: "Cotton flat drawcord",
+          tip: "Heat sealed clear tip",
+          length: "150 cm cut length",
+        },
+        unitPrice: "0.62",
+      },
+    ],
+  },
+  metal: {
+    fields: [
+      { key: "item", label: "Item", placeholder: "Buckle, eyelet, D-ring..." },
+      { key: "material", label: "Material", placeholder: "Zinc alloy, brass, steel" },
+      { key: "finish", label: "Finish", placeholder: "Nickel, antique brass, matte black" },
+      { key: "size", label: "Size", placeholder: "Inner width, diameter, thickness" },
+    ],
+    dummySets: [
+      {
+        parameters: {
+          item: "D-ring",
+          material: "Zinc alloy",
+          finish: "Matte black plating",
+          size: "25 mm inner width",
+        },
+        unitPrice: "0.11",
+      },
+      {
+        parameters: {
+          item: "Logo eyelet",
+          material: "Brass",
+          finish: "Antique brass",
+          size: "12 mm outer diameter",
+        },
+        unitPrice: "0.085",
+      },
+    ],
+  },
+  button: {
+    fields: [
+      { key: "size", label: "Size", placeholder: "18L, 24L, 15 mm..." },
+      { key: "material", label: "Material", placeholder: "Resin, corozo, metal" },
+      { key: "hole", label: "Hole / shank", placeholder: "2-hole, 4-hole, shank" },
+      { key: "finish", label: "Finish", placeholder: "Matte, glossy, engraved" },
+    ],
+    dummySets: [
+      {
+        parameters: {
+          size: "24L / 15 mm",
+          material: "Recycled resin",
+          hole: "4-hole",
+          finish: "Matte black with laser logo",
+        },
+        unitPrice: "0.038",
+      },
+      {
+        parameters: {
+          size: "18L / 11.5 mm",
+          material: "Corozo",
+          hole: "2-hole",
+          finish: "Natural dye, polished edge",
+        },
+        unitPrice: "0.052",
+      },
+    ],
+  },
+  "pu-patch": {
+    fields: [
+      { key: "width", label: "Width", placeholder: "60 mm" },
+      { key: "height", label: "Height", placeholder: "35 mm" },
+      { key: "base", label: "Base", placeholder: "PU leather, microfiber" },
+      { key: "logo", label: "Logo method", placeholder: "Deboss, emboss, print" },
+      { key: "backing", label: "Backing", placeholder: "Sew line, adhesive, velcro" },
+    ],
+    dummySets: [
+      {
+        parameters: {
+          width: "60 mm",
+          height: "35 mm",
+          base: "Brown PU leather",
+          logo: "Debossed logo with black fill",
+          backing: "Sew line 3 mm from edge",
+        },
+        unitPrice: "0.28",
+      },
+      {
+        parameters: {
+          width: "75 mm",
+          height: "42 mm",
+          base: "Matte microfiber PU",
+          logo: "Embossed logo",
+          backing: "Heat-press adhesive backing",
+        },
+        unitPrice: "0.36",
+      },
+    ],
+  },
+  "embroidery-patch": {
+    fields: [
+      { key: "width", label: "Width", placeholder: "80 mm" },
+      { key: "height", label: "Height", placeholder: "50 mm" },
+      { key: "thread", label: "Thread", placeholder: "Polyester, metallic, glow..." },
+      { key: "backing", label: "Backing", placeholder: "Sew-on, iron-on, velcro" },
+      { key: "border", label: "Border", placeholder: "Merrow, laser cut, satin stitch" },
+    ],
+    dummySets: [
+      {
+        parameters: {
+          width: "80 mm",
+          height: "50 mm",
+          thread: "Polyester thread, 6 colors",
+          backing: "Iron-on backing",
+          border: "Merrow border",
+        },
+        unitPrice: "0.72",
+      },
+      {
+        parameters: {
+          width: "55 mm",
+          height: "55 mm",
+          thread: "Metallic gold plus polyester",
+          backing: "Hook velcro backing",
+          border: "Laser cut edge",
+        },
+        unitPrice: "0.91",
+      },
+    ],
+  },
+  "silicon-patch": {
+    fields: [
+      { key: "width", label: "Width", placeholder: "50 mm" },
+      { key: "height", label: "Height", placeholder: "30 mm" },
+      { key: "thickness", label: "Thickness", placeholder: "2 mm" },
+      { key: "colors", label: "Colors", placeholder: "Raised logo colors" },
+      { key: "backing", label: "Backing", placeholder: "Sew channel, adhesive, velcro" },
+    ],
+    dummySets: [
+      {
+        parameters: {
+          width: "50 mm",
+          height: "30 mm",
+          thickness: "2 mm",
+          colors: "Black base, white raised logo",
+          backing: "Sew channel",
+        },
+        unitPrice: "0.39",
+      },
+      {
+        parameters: {
+          width: "70 mm",
+          height: "40 mm",
+          thickness: "3 mm",
+          colors: "Tone-on-tone matte navy",
+          backing: "Heat adhesive backing",
+        },
+        unitPrice: "0.58",
+      },
+    ],
+  },
+  thread: {
+    fields: [
+      { key: "composition", label: "Composition", placeholder: "Polyester, cotton, nylon" },
+      { key: "count", label: "Count / Tex", placeholder: "Tex 27, 40/2..." },
+      { key: "color", label: "Color", placeholder: "Pantone or shade code" },
+      { key: "cone", label: "Cone weight", placeholder: "3000 yd, 5000 m, 1 kg" },
+    ],
+    dummySets: [
+      {
+        parameters: {
+          composition: "Spun polyester",
+          count: "40/2",
+          color: "Pantone Black C",
+          cone: "5000 m cone",
+        },
+        unitPrice: "2.85",
+      },
+      {
+        parameters: {
+          composition: "Core spun polyester",
+          count: "Tex 27",
+          color: "Warm white shade card match",
+          cone: "3000 yd cone",
+        },
+        unitPrice: "3.2",
+      },
+    ],
+  },
+  polybag: {
+    fields: [
+      { key: "width", label: "Width", placeholder: "300 mm" },
+      { key: "height", label: "Height", placeholder: "400 mm" },
+      { key: "material", label: "Material", placeholder: "LDPE, PP, recycled content" },
+      { key: "thickness", label: "Thickness", placeholder: "40 micron" },
+      { key: "closure", label: "Closure", placeholder: "Self seal, zipper, warning print" },
+    ],
+    dummySets: [
+      {
+        parameters: {
+          width: "300 mm",
+          height: "400 mm",
+          material: "LDPE with 30% recycled content",
+          thickness: "40 micron",
+          closure: "Self-seal flap with suffocation warning",
+        },
+        unitPrice: "0.045",
+      },
+      {
+        parameters: {
+          width: "250 mm",
+          height: "350 mm",
+          material: "Frosted PP",
+          thickness: "55 micron",
+          closure: "Zip lock with vent hole",
+        },
+        unitPrice: "0.063",
+      },
+    ],
+  },
+};
+
+function getDefaultProductParameters(productType: SupplierProductType): Record<string, string> {
+  return Object.fromEntries(
+    productParameterTemplates[productType].fields.map((field) => [field.key, ""]),
+  );
+}
+
+function getProductParameterDummySet(
+  productType: SupplierProductType,
+  index: number,
+): ProductParameterDummySet {
+  const template = productParameterTemplates[productType];
+  const combinationIndex = index % 20;
+  const dummy = template.dummySets[combinationIndex % template.dummySets.length];
+  const productionRuns = ["Prototype", "Low MOQ", "Standard", "Recycled option", "Premium"];
+  const packingMethods = ["Bulk packed", "Bundled", "Individual packed", "Export packed"];
+  const fieldToVary = template.fields.at(-1)?.key;
+  const variation = `${productionRuns[combinationIndex % productionRuns.length]}, ${packingMethods[Math.floor(combinationIndex / productionRuns.length)]}`;
+  const price = Number.parseFloat(dummy.unitPrice);
+  const priceMultiplier = 1 + combinationIndex * 0.015;
+  const parameters = { ...getDefaultProductParameters(productType), ...dummy.parameters };
+
+  if (fieldToVary) {
+    parameters[fieldToVary] = `${parameters[fieldToVary]} (${variation})`;
+  }
+
+  return {
+    parameters,
+    unitPrice: Number.isFinite(price)
+      ? (price * priceMultiplier).toFixed(Math.max(2, dummy.unitPrice.split(".")[1]?.length ?? 0))
+      : dummy.unitPrice,
+  };
+}
+
+function createProductForm(
+  productType: SupplierProductType,
+  input: Omit<ProductFormState, "productType" | "priceUnit">,
+): ProductFormState {
+  return {
+    ...input,
+    productType,
+    priceUnit: getProductPriceUnit(productType),
+  };
+}
+
+function getProductMaterialSummary(parameters: Record<string, string>): string {
+  return (
+    parameters.material ||
+    parameters.paper ||
+    parameters.weave ||
+    parameters.film ||
+    parameters.substrate ||
+    parameters.finish ||
+    "Supplier confirmed trim material"
+  );
+}
+
+function getProductColorNotes(parameters: Record<string, string>): string {
+  return (
+    parameters.color ||
+    parameters.colors ||
+    parameters.finish ||
+    parameters.print ||
+    parameters.weave ||
+    "Match approved supplier color standard"
+  );
+}
+
+function normalizeProductDimensions(parameters: Record<string, string>): Record<string, string> {
+  if (parameters.width || parameters.height || !parameters.size) return parameters;
+
+  const match = parameters.size.match(/^\s*([^xX×]+?)\s*[xX×]\s*(.+?)\s*$/);
+  if (!match) return parameters;
+
+  const rest = { ...parameters };
+  delete rest.size;
+  return { ...rest, width: match[1].trim(), height: match[2].trim() };
+}
+
+function getDummyProduct(
+  index: number,
+  availableProductTypes: readonly SupplierProductType[] = supplierProductTypes,
+): ProductFormState {
+  const productTypes = availableProductTypes.length ? availableProductTypes : supplierProductTypes;
+  const productType = productTypes[index % productTypes.length] ?? defaultSupplierProductType;
+  const parameterCycle = Math.floor(index / productTypes.length);
+  const dummy = getProductParameterDummySet(productType, parameterCycle);
+  const label = supplierProductTypeLabels[productType];
+
+  return createProductForm(productType, {
+    subject: `${label} sample ${parameterCycle + 1}`,
+    detail: `Generic ${label.toLocaleLowerCase()} specification. Confirm construction, tolerance, finishing, packing, and production approval sample before bulk order.`,
+    material: getProductMaterialSummary(dummy.parameters),
+    colorNotes: getProductColorNotes(dummy.parameters),
+    parameters: { ...dummy.parameters },
+    unitPrice: dummy.unitPrice,
+    image: null,
+  });
+}
 
 function getDummyCustomerCompany(index: number): CustomerCompanyState {
   return { ...dummyCustomerCompanies[index % dummyCustomerCompanies.length] };
@@ -268,9 +1044,20 @@ function getDummySupplierCompany(index: number): SupplierCompanyState {
   return { ...company, productTypes: [...company.productTypes] };
 }
 
-function getDummyProduct(index: number): ProductFormState {
-  const product = dummyProducts[index % dummyProducts.length];
-  return { ...product, image: product.image ? { ...product.image } : null };
+function emptyProductForm(
+  productType: SupplierProductType = defaultSupplierProductType,
+): ProductFormState {
+  return {
+    productType,
+    subject: "",
+    detail: "",
+    material: "",
+    colorNotes: "",
+    parameters: getDefaultProductParameters(productType),
+    unitPrice: "",
+    priceUnit: getProductPriceUnit(productType),
+    image: null,
+  };
 }
 
 function getZodFieldErrors(result: FieldParseResult) {
@@ -332,48 +1119,34 @@ function SubTabButton({
   );
 }
 
-function ProductTypeMultiSelect({
+function ProductTypeSelect({
   value,
   onChange,
 }: {
   value: SupplierProductType[];
   onChange: (next: SupplierProductType[]) => void;
 }) {
-  function toggleProductType(productType: SupplierProductType) {
-    onChange(
-      value.includes(productType)
-        ? value.filter((current) => current !== productType)
-        : [...value, productType],
-    );
-  }
-
-  const label = value.length
-    ? value.map((productType) => supplierProductTypeLabels[productType]).join(", ")
-    : "Choose product types";
-
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger render={<Button type="button" variant="outline" className="w-full" />}>
-        <span className="min-w-0 flex-1 truncate text-left">{label}</span>
-        <ChevronDown className="text-muted-foreground" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent className="w-64">
-        <DropdownMenuLabel>Product type</DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        {supplierProductTypes.map((productType) => (
-          <DropdownMenuCheckboxItem
-            key={productType}
-            checked={value.includes(productType)}
-            onClick={(event) => {
-              event.preventDefault();
-              toggleProductType(productType);
-            }}
-          >
-            {supplierProductTypeLabels[productType]}
-          </DropdownMenuCheckboxItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <Select
+      value={value[0]}
+      onValueChange={(nextValue) =>
+        onChange(nextValue ? [normalizeSupplierProductType(nextValue)] : [])
+      }
+    >
+      <SelectTrigger className="w-full">
+        <SelectValue placeholder="Choose a product type" />
+      </SelectTrigger>
+      <SelectContent align="start" className="max-h-80">
+        <SelectGroup>
+          <SelectLabel>Product type</SelectLabel>
+          {supplierProductTypes.map((productType) => (
+            <SelectItem key={productType} value={productType}>
+              {supplierProductTypeLabels[productType]}
+            </SelectItem>
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
   );
 }
 
@@ -679,7 +1452,7 @@ function SupplierCompanyForm({
         <div>
           <h3 className="text-lg font-semibold tracking-tight">Supplier company</h3>
           <p className="text-muted-foreground mt-1 text-sm">
-            Choose the supplier product types, then continue to employees.
+            Choose the supplier product type, then continue to employees.
           </p>
         </div>
         <Button
@@ -723,7 +1496,7 @@ function SupplierCompanyForm({
           </div>
         </FormField>
         <FormField label="Product type" error={errors.productTypes}>
-          <ProductTypeMultiSelect
+          <ProductTypeSelect
             value={value.productTypes}
             onChange={(productTypes) => onChange({ ...value, productTypes })}
           />
@@ -768,6 +1541,7 @@ function PartyWorkspacePanel({
   const [searchCollapsedRecordKeys, setSearchCollapsedRecordKeys] = useState<string[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [activeFormVersion, setActiveFormVersion] = useState(formVersion);
+  const [showSupplierNextStep, setShowSupplierNextStep] = useState(false);
   const customers = useCustomers();
   const suppliers = useSuppliers();
   const upsertCustomer = useUpsertCustomer();
@@ -810,9 +1584,13 @@ function PartyWorkspacePanel({
       }
       toast.success(`${partyLabels[kind]} saved`);
       setEditingId(null);
-      setActiveSubTab("company");
       setSearchCollapsedRecordKeys([]);
-      onModeChange("records");
+      if (kind === "supplier") {
+        setShowSupplierNextStep(true);
+      } else {
+        setActiveSubTab("company");
+        onModeChange("records");
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : `Failed to save ${kind}`);
     }
@@ -844,9 +1622,7 @@ function PartyWorkspacePanel({
     setExpandedRecordIds((current) =>
       current.includes(recordId) ? current : [...current, recordId],
     );
-    setSearchCollapsedRecordKeys((current) =>
-      current.filter((key) => key !== searchCollapseKey),
-    );
+    setSearchCollapsedRecordKeys((current) => current.filter((key) => key !== searchCollapseKey));
   }
 
   const visibleRecords = records.filter((record) =>
@@ -1047,6 +1823,16 @@ function PartyWorkspacePanel({
           >
             Employee
           </SubTabButton>
+          {kind === "supplier" ? (
+            <SubTabButton
+              active={activeSubTab === "product"}
+              onClick={() => {
+                if (companyIsComplete) setActiveSubTab("product");
+              }}
+            >
+              Product
+            </SubTabButton>
+          ) : null}
         </div>
       </div>
 
@@ -1076,6 +1862,16 @@ function PartyWorkspacePanel({
             isEditing={editingId !== null}
           />
         ) : null}
+
+        {activeSubTab === "product" && kind === "supplier" ? (
+          <ProductWorkspacePanel
+            mode="new"
+            onModeChange={() => undefined}
+            formVersion={formVersion}
+            availableProductTypes={supplierCompany.productTypes}
+            embedded
+          />
+        ) : null}
       </div>
       {isSaving ? (
         <div
@@ -1089,6 +1885,39 @@ function PartyWorkspacePanel({
           </div>
         </div>
       ) : null}
+      <Dialog open={showSupplierNextStep} onOpenChange={setShowSupplierNextStep}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Add a product for this supplier?</DialogTitle>
+            <DialogDescription>
+              The supplier and employees are saved. You can add a product now or return to supplier
+              records.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setShowSupplierNextStep(false);
+                setActiveSubTab("company");
+                onModeChange("records");
+              }}
+            >
+              Not now
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                setShowSupplierNextStep(false);
+                setActiveSubTab("product");
+              }}
+            >
+              Add product
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }
@@ -1101,19 +1930,22 @@ function ProductWorkspacePanel({
   mode,
   onModeChange,
   formVersion,
+  availableProductTypes = supplierProductTypes,
+  embedded = false,
 }: {
   mode: "new" | "records";
   onModeChange: (mode: "new" | "records") => void;
   formVersion: number;
+  availableProductTypes?: readonly SupplierProductType[];
+  embedded?: boolean;
 }) {
   const fileInputId = useId();
-  const [form, setForm] = useState<ProductFormState>({
-    subject: "",
-    detail: "",
-    material: "",
-    colorNotes: "",
-    image: null,
-  });
+  const normalizedAvailableProductTypes = normalizeSupplierProductTypes(availableProductTypes);
+  const selectableProductTypes = normalizedAvailableProductTypes.length
+    ? normalizedAvailableProductTypes
+    : supplierProductTypes;
+  const initialProductType = selectableProductTypes[0] ?? defaultSupplierProductType;
+  const [form, setForm] = useState<ProductFormState>(emptyProductForm(initialProductType));
   const [imageError, setImageError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -1121,20 +1953,24 @@ function ProductWorkspacePanel({
   const [submitted, setSubmitted] = useState(false);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [dummyInputCount, setDummyInputCount] = useState(0);
+  const [parameterDummyInputCount, setParameterDummyInputCount] = useState(0);
   const products = useProducts();
   const upsertProduct = useUpsertProduct();
 
-  const hasProductDetail = useMemo(
-    () =>
-      Boolean(
-        form.subject.trim() || form.detail.trim() || form.material.trim() || form.colorNotes.trim(),
-      ),
-    [form.colorNotes, form.detail, form.material, form.subject],
-  );
+  const productParameterFields = productParameterTemplates[form.productType].fields;
   const parseResult = productSchema.safeParse(form);
   const errors = submitted ? getZodFieldErrors(parseResult) : {};
   const visibleProducts = (products.data ?? []).filter((product) =>
-    [product.subject, product.detail, product.material, product.colorNotes]
+    [
+      supplierProductTypeLabels[product.productType],
+      product.subject,
+      product.detail,
+      product.material,
+      product.colorNotes,
+      product.unitPrice,
+      product.priceUnit,
+      ...Object.values(product.parameters),
+    ]
       .join(" ")
       .toLocaleLowerCase()
       .includes(query.trim().toLocaleLowerCase()),
@@ -1142,15 +1978,15 @@ function ProductWorkspacePanel({
 
   if (activeFormVersion !== formVersion) {
     setActiveFormVersion(formVersion);
-    setForm({
-      subject: "",
-      detail: "",
-      material: "",
-      colorNotes: "",
-      image: null,
-    });
+    setForm(emptyProductForm(initialProductType));
     setImageError(null);
     setEditingId(null);
+    setSubmitted(false);
+  }
+
+  if (!selectableProductTypes.includes(form.productType)) {
+    setForm(emptyProductForm(initialProductType));
+    setParameterDummyInputCount(0);
     setSubmitted(false);
   }
 
@@ -1196,6 +2032,46 @@ function ProductWorkspacePanel({
     void setImageFromFiles(event.target.files);
   }
 
+  function updateProductType(value: string | null) {
+    if (!value) return;
+    const productType = normalizeSupplierProductType(value);
+    setForm((current) => ({
+      ...current,
+      productType,
+      parameters: getDefaultProductParameters(productType),
+      unitPrice: "",
+      priceUnit: getProductPriceUnit(productType),
+    }));
+    setParameterDummyInputCount(0);
+  }
+
+  function updateProductParameter(key: string, value: string) {
+    setForm((current) => ({
+      ...current,
+      parameters: {
+        ...current.parameters,
+        [key]: value,
+      },
+    }));
+  }
+
+  function fillDummyProductParameters() {
+    const dummy = getProductParameterDummySet(form.productType, parameterDummyInputCount);
+    const label = supplierProductTypeLabels[form.productType];
+    setForm((current) => ({
+      ...current,
+      subject: `${label} internal ${parameterDummyInputCount + 1}`,
+      detail: `Generic ${label.toLocaleLowerCase()} specification. Confirm construction, tolerance, finishing, packing, and production approval sample before bulk order.`,
+      material: getProductMaterialSummary(dummy.parameters),
+      colorNotes: getProductColorNotes(dummy.parameters),
+      parameters: dummy.parameters,
+      unitPrice: dummy.unitPrice,
+      priceUnit: getProductPriceUnit(current.productType),
+    }));
+    setParameterDummyInputCount((count) => count + 1);
+    setSubmitted(false);
+  }
+
   async function saveProduct() {
     setSubmitted(true);
     const result = productSchema.safeParse(form);
@@ -1212,11 +2088,19 @@ function ProductWorkspacePanel({
   }
 
   function editProduct(product: ProductRecord) {
+    const productType = normalizeSupplierProductType(product.productType);
     setForm({
+      productType,
       subject: product.subject,
       detail: product.detail,
       material: product.material,
       colorNotes: product.colorNotes,
+      parameters: {
+        ...getDefaultProductParameters(productType),
+        ...normalizeProductDimensions(product.parameters),
+      },
+      unitPrice: product.unitPrice,
+      priceUnit: product.priceUnit || getProductPriceUnit(productType),
       image: product.image,
     });
     setEditingId(product.id);
@@ -1258,18 +2142,23 @@ function ProductWorkspacePanel({
               <table className="w-full text-left text-sm">
                 <thead className="bg-muted/60 text-muted-foreground text-xs uppercase">
                   <tr>
+                    <th className="px-4 py-3">Type</th>
                     <th className="px-4 py-3">Subject</th>
-                    <th className="px-4 py-3">Material</th>
-                    <th className="px-4 py-3">Color notes</th>
+                    <th className="px-4 py-3">Unit price</th>
                     <th className="px-4 py-3 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
                   {visibleProducts.map((product) => (
                     <tr key={product.id} className="hover:bg-muted/30">
+                      <td className="text-muted-foreground px-4 py-3">
+                        {supplierProductTypeLabels[product.productType]}
+                      </td>
                       <td className="px-4 py-3 font-medium">{product.subject}</td>
-                      <td className="text-muted-foreground px-4 py-3">{product.material}</td>
-                      <td className="px-4 py-3">{product.colorNotes}</td>
+                      <td className="px-4 py-3">
+                        {product.unitPrice}{" "}
+                        <span className="text-muted-foreground">{product.priceUnit}</span>
+                      </td>
                       <td className="px-4 py-3 text-right">
                         <Button
                           type="button"
@@ -1297,21 +2186,24 @@ function ProductWorkspacePanel({
   }
 
   return (
-    <section className="mx-auto grid w-full max-w-6xl gap-5">
+    <section className={cn("grid w-full gap-5", embedded ? "" : "mx-auto max-w-6xl")}>
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <p className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
-            Standard userform
+            {embedded ? "Supplier product form" : "Standard userform"}
           </p>
-          <h2 className="mt-1 text-2xl font-semibold tracking-tight">Product (+)</h2>
+          {!embedded ? (
+            <h2 className="mt-1 text-2xl font-semibold tracking-tight">Product (+)</h2>
+          ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
           <Button
             type="button"
             variant="outline"
             onClick={() => {
-              setForm(getDummyProduct(dummyInputCount));
+              setForm(getDummyProduct(dummyInputCount, selectableProductTypes));
               setDummyInputCount((count) => count + 1);
+              setParameterDummyInputCount(0);
               setImageError(null);
               setSubmitted(false);
             }}
@@ -1327,19 +2219,41 @@ function ProductWorkspacePanel({
       </div>
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(280px,380px)]">
-        <div className="bg-card rounded-lg border p-5 shadow-sm">
-          <div className="mb-5 flex items-center gap-2">
-            <Badge variant={hasProductDetail ? "default" : "outline"}>Product detail</Badge>
+        <div
+          className={cn("rounded-lg border p-5 shadow-sm", embedded ? "bg-background" : "bg-card")}
+        >
+          <div className="mb-5 flex flex-wrap items-center justify-end gap-3">
+            <Button type="button" variant="outline" onClick={fillDummyProductParameters}>
+              <Wand2 />
+              Dummy parameters
+            </Button>
           </div>
           <div className="grid gap-4">
-            <FormField label="Subject" error={errors.subject}>
+            <FormField label="Product type" error={errors.productType}>
+              <Select value={form.productType} onValueChange={updateProductType}>
+                <SelectTrigger className="w-full">
+                  <SelectValue>{supplierProductTypeLabels[form.productType]}</SelectValue>
+                </SelectTrigger>
+                <SelectContent align="start" className="max-h-80">
+                  <SelectGroup>
+                    <SelectLabel>Product type</SelectLabel>
+                    {selectableProductTypes.map((productType) => (
+                      <SelectItem key={productType} value={productType}>
+                        {supplierProductTypeLabels[productType]}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </FormField>
+            <FormField label="Internal code" error={errors.subject}>
               <Input
                 value={form.subject}
                 onChange={(event) => setForm({ ...form, subject: event.target.value })}
-                placeholder="Product subject"
+                placeholder="Internal product code"
               />
             </FormField>
-            <FormField label="Product detail" error={errors.detail}>
+            <FormField label="Product details" error={errors.detail}>
               <Textarea
                 value={form.detail}
                 onChange={(event) => setForm({ ...form, detail: event.target.value })}
@@ -1363,10 +2277,37 @@ function ProductWorkspacePanel({
                 />
               </FormField>
             </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              {productParameterFields.map((field) => (
+                <FormField key={field.key} label={field.label}>
+                  <Input
+                    value={form.parameters[field.key] ?? ""}
+                    onChange={(event) => updateProductParameter(field.key, event.target.value)}
+                    placeholder={field.placeholder}
+                  />
+                </FormField>
+              ))}
+            </div>
+            <FormField label="Unit price" error={errors.unitPrice}>
+              <div className="flex">
+                <Input
+                  value={form.unitPrice}
+                  onChange={(event) => setForm({ ...form, unitPrice: event.target.value })}
+                  className="rounded-r-none"
+                  inputMode="decimal"
+                  placeholder="0.075"
+                />
+                <span className="border-input bg-muted text-muted-foreground flex h-8 shrink-0 items-center rounded-r-lg border border-l-0 px-2 text-sm">
+                  {form.priceUnit}
+                </span>
+              </div>
+            </FormField>
           </div>
         </div>
 
-        <div className="bg-card rounded-lg border p-5 shadow-sm">
+        <div
+          className={cn("rounded-lg border p-5 shadow-sm", embedded ? "bg-background" : "bg-card")}
+        >
           <div className="mb-5 flex items-center justify-between gap-3">
             <Badge variant={form.image ? "default" : "outline"}>Product image</Badge>
             {form.image ? (
@@ -1421,7 +2362,7 @@ function ProductWorkspacePanel({
                   onChange={handleFileChange}
                 />
                 <Button type="button" variant="outline" render={<Label htmlFor={fileInputId} />}>
-                  <Plus />
+                  <FolderOpen />
                   Choose image
                 </Button>
               </div>

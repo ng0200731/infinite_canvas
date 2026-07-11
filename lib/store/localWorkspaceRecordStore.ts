@@ -1,5 +1,9 @@
 import {
   customerRecordInputSchema,
+  getProductPriceUnit,
+  normalizeProductParameters,
+  normalizeSupplierProductType,
+  normalizeSupplierProductTypes,
   productRecordInputSchema,
   supplierRecordInputSchema,
   type CustomerRecord,
@@ -41,6 +45,34 @@ function newestFirst<T extends { updatedAt: string }>(records: T[]): T[] {
   return [...records].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
+function normalizeSupplierRecord(record: SupplierRecord): SupplierRecord {
+  return {
+    ...record,
+    company: {
+      ...record.company,
+      productTypes: normalizeSupplierProductTypes(record.company.productTypes),
+    },
+  };
+}
+
+function normalizeProductRecord(record: ProductRecord): ProductRecord {
+  const productType = normalizeSupplierProductType(record.productType);
+  const unitPrice =
+    typeof record.unitPrice === "string" && record.unitPrice.trim() ? record.unitPrice : "0";
+  const priceUnit =
+    typeof record.priceUnit === "string" && record.priceUnit.trim()
+      ? record.priceUnit
+      : getProductPriceUnit(productType);
+
+  return {
+    ...record,
+    productType,
+    parameters: normalizeProductParameters(record.parameters),
+    unitPrice,
+    priceUnit,
+  };
+}
+
 function upsertRecord<T extends { id: string; createdAt: string; updatedAt: string }>(
   records: T[],
   id: string | null,
@@ -79,7 +111,7 @@ export const localWorkspaceRecordStore: WorkspaceRecordStore = {
   },
 
   async listSuppliers() {
-    return newestFirst(read<SupplierRecord[]>(KEYS.suppliers, []));
+    return newestFirst(read<SupplierRecord[]>(KEYS.suppliers, []).map(normalizeSupplierRecord));
   },
 
   async upsertSupplier(id, input) {
@@ -97,7 +129,7 @@ export const localWorkspaceRecordStore: WorkspaceRecordStore = {
   },
 
   async listProducts() {
-    return newestFirst(read<ProductRecord[]>(KEYS.products, []));
+    return newestFirst(read<ProductRecord[]>(KEYS.products, []).map(normalizeProductRecord));
   },
 
   async upsertProduct(id, input) {

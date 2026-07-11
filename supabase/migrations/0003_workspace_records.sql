@@ -42,7 +42,21 @@ create table if not exists public.suppliers (
   updated_at          timestamptz not null default now(),
   constraint suppliers_product_types_not_empty check (cardinality(product_types) > 0),
   constraint suppliers_product_types_allowed check (
-    product_types <@ array['label', 'tag', 'zipper', 'embroidery-patch', 'snap']::text[]
+    product_types <@ array[
+      'woven-label',
+      'wash-care-label',
+      'hang-tag',
+      'heat-transfer',
+      'elastic',
+      'drawcord',
+      'metal',
+      'button',
+      'pu-patch',
+      'embroidery-patch',
+      'silicon-patch',
+      'thread',
+      'polybag'
+    ]::text[]
   )
 );
 
@@ -73,19 +87,42 @@ create index if not exists supplier_employees_supplier_sort_idx
 create table if not exists public.products (
   id                 uuid primary key default gen_random_uuid(),
   user_id            uuid not null references auth.users(id) on delete cascade default auth.uid(),
+  product_type       text not null default 'woven-label',
   subject            text not null,
   detail             text not null,
   material           text not null,
   color_notes        text not null,
+  parameters         jsonb not null default '{}'::jsonb,
+  unit_price         text not null default '0',
+  price_unit         text not null default 'per pc',
   image_name         text,
   image_url          text,
   image_storage_path text,
   created_at         timestamptz not null default now(),
-  updated_at         timestamptz not null default now()
+  updated_at         timestamptz not null default now(),
+  constraint products_product_type_allowed check (
+    product_type = any(array[
+      'woven-label',
+      'wash-care-label',
+      'hang-tag',
+      'heat-transfer',
+      'elastic',
+      'drawcord',
+      'metal',
+      'button',
+      'pu-patch',
+      'embroidery-patch',
+      'silicon-patch',
+      'thread',
+      'polybag'
+    ]::text[])
+  ),
+  constraint products_parameters_object check (jsonb_typeof(parameters) = 'object')
 );
 
 create index if not exists products_user_id_idx on public.products(user_id);
 create index if not exists products_subject_idx on public.products(subject);
+create index if not exists products_product_type_idx on public.products(product_type);
 
 drop trigger if exists customers_touch_updated_at on public.customers;
 create trigger customers_touch_updated_at

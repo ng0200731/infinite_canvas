@@ -253,10 +253,11 @@ export function PantoneNode({
           </select>
 
           <Input
+            data-new-node-focus-field
             value={data.query}
             placeholder="Red 032 C, Red032C, 032, 17-5641"
             onChange={(event) => handleQueryChange(event.target.value)}
-            className="h-8 rounded-none border-neutral-300 bg-white text-sm text-neutral-950 placeholder:text-neutral-500 focus-visible:border-neutral-950 focus-visible:ring-neutral-950/20 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-50 dark:placeholder:text-neutral-500 dark:focus-visible:border-neutral-50 dark:focus-visible:ring-neutral-50/20"
+            className="nodrag nopan h-8 rounded-none border-neutral-300 bg-white text-sm text-neutral-950 placeholder:text-neutral-500 focus-visible:border-neutral-950 focus-visible:ring-neutral-950/20 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-50 dark:placeholder:text-neutral-500 dark:focus-visible:border-neutral-50 dark:focus-visible:ring-neutral-50/20"
           />
         </div>
 

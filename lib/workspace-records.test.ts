@@ -4,6 +4,7 @@ import {
   customerCompanySchema,
   hadAtSymbol,
   normalizeEmailDomainSuffix,
+  normalizeSupplierProductTypes,
   productSchema,
   supplierCompanySchema,
 } from "@/lib/workspace-records";
@@ -38,7 +39,7 @@ describe("workspace record validation", () => {
       supplierCompanySchema.safeParse({
         companyName: "Bright Trim",
         emailDomainSuffix: "brighttrim.com",
-        productTypes: ["label", "zipper"],
+        productTypes: ["woven-label", "hang-tag"],
       }).success,
     ).toBe(true);
 
@@ -51,13 +52,29 @@ describe("workspace record validation", () => {
     ).toBe(false);
   });
 
+  it("normalizes legacy supplier product types", () => {
+    expect(normalizeSupplierProductTypes(["label", "tag", "zipper", "snap"])).toEqual([
+      "woven-label",
+      "hang-tag",
+      "metal",
+      "button",
+    ]);
+  });
+
   it("validates product records", () => {
     expect(
       productSchema.safeParse({
+        productType: "woven-label",
         subject: "Woven label",
         detail: "Main neck label and care label",
         material: "Polyester",
         colorNotes: "Black and white",
+        parameters: {
+          size: "45 x 20 mm",
+          fold: "Center fold",
+        },
+        unitPrice: "0.032",
+        priceUnit: "per pc",
         image: {
           name: "label.webp",
           url: "https://example.com/label.webp",
@@ -68,10 +85,14 @@ describe("workspace record validation", () => {
 
     expect(
       productSchema.safeParse({
+        productType: "woven-label",
         subject: "",
         detail: "",
         material: "",
         colorNotes: "",
+        parameters: {},
+        unitPrice: "",
+        priceUnit: "",
         image: null,
       }).success,
     ).toBe(false);

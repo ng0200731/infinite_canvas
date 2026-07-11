@@ -1,16 +1,80 @@
 import { z } from "zod";
 
-export const supplierProductTypes = ["label", "tag", "zipper", "embroidery-patch", "snap"] as const;
+export const supplierProductTypes = [
+  "woven-label",
+  "wash-care-label",
+  "hang-tag",
+  "heat-transfer",
+  "elastic",
+  "drawcord",
+  "metal",
+  "button",
+  "pu-patch",
+  "embroidery-patch",
+  "silicon-patch",
+  "thread",
+  "polybag",
+] as const;
 
 export type SupplierProductType = (typeof supplierProductTypes)[number];
 
+export const defaultSupplierProductType = "woven-label" satisfies SupplierProductType;
+
 export const supplierProductTypeLabels: Record<SupplierProductType, string> = {
-  label: "Label",
-  tag: "Tag",
-  zipper: "Zipper",
+  "woven-label": "Woven label",
+  "wash-care-label": "Wash care label",
+  "hang-tag": "Hang tag",
+  "heat-transfer": "Heat transfer",
+  elastic: "Elastic",
+  drawcord: "Drawcord",
+  metal: "Metal",
+  button: "Button",
+  "pu-patch": "PU patch",
   "embroidery-patch": "Embroidery patch",
-  snap: "Snap",
+  "silicon-patch": "Silicon patch",
+  thread: "Thread",
+  polybag: "Polybag",
 };
+
+const legacySupplierProductTypeMap: Record<string, SupplierProductType> = {
+  label: "woven-label",
+  tag: "hang-tag",
+  zipper: "metal",
+  snap: "button",
+};
+
+export function normalizeSupplierProductTypes(values: readonly string[]): SupplierProductType[] {
+  const normalized = values
+    .map((value) =>
+      supplierProductTypes.includes(value as SupplierProductType)
+        ? (value as SupplierProductType)
+        : legacySupplierProductTypeMap[value],
+    )
+    .filter((value): value is SupplierProductType => Boolean(value));
+
+  return Array.from(new Set(normalized));
+}
+
+export function normalizeSupplierProductType(value: string | null | undefined): SupplierProductType {
+  return normalizeSupplierProductTypes(value ? [value] : [])[0] ?? defaultSupplierProductType;
+}
+
+export function getProductPriceUnit(productType: SupplierProductType): string {
+  if (productType === "elastic" || productType === "drawcord") return "per meter";
+  if (productType === "thread") return "per cone";
+  if (productType === "polybag") return "per bag";
+  return "per pc";
+}
+
+export function normalizeProductParameters(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter((entry): entry is [string, string] => typeof entry[1] === "string")
+      .map(([key, parameterValue]) => [key, parameterValue]),
+  );
+}
 
 const domainSuffixSchema = z
   .string()
@@ -46,10 +110,14 @@ export const productImageSchema = z.object({
 });
 
 export const productSchema = z.object({
+  productType: z.enum(supplierProductTypes),
   subject: z.string().trim().min(1, "Subject is required."),
   detail: z.string().trim().min(1, "Product detail is required."),
   material: z.string().trim().min(1, "Material is required."),
   colorNotes: z.string().trim().min(1, "Color notes are required."),
+  parameters: z.record(z.string(), z.string()),
+  unitPrice: z.string().trim().min(1, "Unit price is required."),
+  priceUnit: z.string().trim().min(1, "Price unit is required."),
   image: productImageSchema.nullable(),
 });
 

@@ -46,7 +46,7 @@ export function InputNode({ id, data, parentId, selected }: NodeProps<InputCanva
   const highlight = useConnectionHighlight(id);
   const accent = useGroupAccent(parentId);
   const { hoveredReferenceNodeId } = useReferenceHover();
-  const inputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const width = data.width ?? DEFAULT_WIDTH;
   const height = data.height ?? DEFAULT_HEIGHT;
@@ -121,17 +121,18 @@ export function InputNode({ id, data, parentId, selected }: NodeProps<InputCanva
           aria-label="Browse local image"
           title="Browse local image"
           className="nodrag ml-auto"
-          onClick={() => inputRef.current?.click()}
+          onClick={() => fileInputRef.current?.click()}
         >
           <FolderOpen />
         </Button>
       </div>
 
       <Input
+        data-new-node-focus-field
         value={data.alias}
         placeholder="alias"
         aria-label="Input alias"
-        className="nodrag h-8 text-sm"
+        className="nodrag nopan h-8 text-sm"
         onChange={(event) => updateNodeData(id, { alias: event.target.value })}
       />
 
@@ -200,7 +201,7 @@ export function InputNode({ id, data, parentId, selected }: NodeProps<InputCanva
           </div>
         )}
         <input
-          ref={inputRef}
+          ref={fileInputRef}
           type="file"
           accept="image/*"
           className="hidden"
