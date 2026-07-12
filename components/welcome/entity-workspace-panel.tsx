@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { ImagePreviewDialog } from "@/components/image-preview-dialog";
+import { ProductImageBrowserDialog } from "@/components/product-image-browser-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -72,6 +72,7 @@ import {
   useUpsertProduct,
   useUpsertSupplier,
 } from "@/lib/hooks/use-workspace-records";
+import { productRecordSearchText } from "@/lib/product-image-gallery";
 import { uploadImage } from "@/lib/upload";
 import { cn } from "@/lib/utils";
 
@@ -1156,18 +1157,20 @@ function getProductPrimaryVariant(product: ProductRecord): ProductVariantRecord 
 }
 
 function getProductSearchText(product: ProductRecord) {
+  return productRecordSearchText(product);
+}
+
+function getProductFormVariantSearchText(form: ProductFormState, variant: ProductVariantFormState) {
   return [
-    supplierProductTypeLabels[product.productType],
-    product.subject,
-    product.detail,
-    ...product.variants.flatMap((variant) => [
-      variant.material,
-      variant.colorNotes,
-      variant.unitPrice,
-      variant.priceUnit,
-      ...Object.values(variant.parameters),
-      variant.image?.name ?? "",
-    ]),
+    supplierProductTypeLabels[form.productType],
+    form.subject,
+    form.detail,
+    variant.material,
+    variant.colorNotes,
+    variant.unitPrice,
+    variant.priceUnit,
+    variant.image?.name ?? "",
+    ...Object.entries(variant.parameters).flatMap(([key, value]) => [key, value]),
   ]
     .join(" ")
     .trim();
@@ -1951,13 +1954,8 @@ function PartyWorkspacePanel({
                       const productRecords = supplierProducts.filter(
                         (product) => product.supplierId === record.id,
                       );
-                      const galleryItems = productRecords.flatMap((product) =>
-                        product.variants
-                          .filter((variant) => variant.image)
-                          .map((variant, index) => ({
-                            src: variant.image?.url ?? "",
-                            alt: `${product.subject} variant ${index + 1}`,
-                          })),
+                      const hasProductImages = productRecords.some((product) =>
+                        product.variants.some((variant) => variant.image),
                       );
 
                       return (
@@ -1979,12 +1977,10 @@ function PartyWorkspacePanel({
                           <td className="px-4 py-3">{productRecords.length}</td>
                           <td className="px-4 py-3 text-right">
                             <div className="flex justify-end gap-2">
-                              {galleryItems[0] ? (
-                                <ImagePreviewDialog
-                                  src={galleryItems[0].src}
-                                  alt={galleryItems[0].alt}
-                                  title={`${record.company.companyName} product gallery`}
-                                  gallery={galleryItems}
+                              {hasProductImages ? (
+                                <ProductImageBrowserDialog
+                                  products={productRecords}
+                                  title={`${record.company.companyName} product images`}
                                   trigger={
                                     <Button type="button" variant="ghost" size="sm">
                                       View products
@@ -2295,6 +2291,7 @@ function ProductWorkspacePanel({
   const fileInputId = useId();
   const [supplierQuery, setSupplierQuery] = useState("");
   const [query, setQuery] = useState("");
+  const [variantImageQuery, setVariantImageQuery] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [activeFormVersion, setActiveFormVersion] = useState(formVersion);
   const [submitted, setSubmitted] = useState(false);
@@ -2302,7 +2299,6 @@ function ProductWorkspacePanel({
   const [dummyInputCount, setDummyInputCount] = useState(0);
   const [parameterDummyInputCount, setParameterDummyInputCount] = useState(0);
   const [imageError, setImageError] = useState<string | null>(null);
-  const [activeGallery, setActiveGallery] = useState<ProductRecord | null>(null);
   const suppliers = useSuppliers();
   const products = useProducts();
   const upsertProduct = useUpsertProduct();
@@ -2334,6 +2330,13 @@ function ProductWorkspacePanel({
   const visibleProducts = (products.data ?? []).filter((product) =>
     getProductSearchText(product).toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
   );
+  const visibleFormVariants = normalizeVariants(form.variants).filter((variant) => {
+    const normalizedQuery = variantImageQuery.trim().toLocaleLowerCase();
+    if (!normalizedQuery) return true;
+    return getProductFormVariantSearchText(form, variant)
+      .toLocaleLowerCase()
+      .includes(normalizedQuery);
+  });
   const visibleSupplierOptions = supplierOptions.filter((supplier) =>
     fuzzyMatches(
       `${supplier.company.companyName} ${supplier.company.emailDomainSuffix} ${supplier.company.productTypes
@@ -2620,14 +2623,15 @@ function ProductWorkspacePanel({
                         </td>
                         <td className="px-4 py-3 text-right">
                           <div className="flex justify-end gap-2">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => setActiveGallery(product)}
-                            >
-                              View
-                            </Button>
+                            <ProductImageBrowserDialog
+                              products={[product]}
+                              title={product.subject}
+                              trigger={
+                                <Button type="button" variant="ghost" size="sm">
+                                  View
+                                </Button>
+                              }
+                            />
                             <Button
                               type="button"
                               variant="ghost"
@@ -2651,58 +2655,6 @@ function ProductWorkspacePanel({
             </p>
           )}
         </div>
-        <Dialog
-          open={activeGallery !== null}
-          onOpenChange={(open) => !open && setActiveGallery(null)}
-        >
-          <DialogContent className="max-w-5xl">
-            <DialogHeader>
-              <DialogTitle>{activeGallery?.subject ?? "Product images"}</DialogTitle>
-              <DialogDescription>
-                Review every saved product variant image in one place.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-              {(activeGallery?.variants ?? []).map((variant, index, variants) =>
-                variant.image ? (
-                  <ImagePreviewDialog
-                    key={variant.id}
-                    src={variant.image.url}
-                    alt={`${activeGallery?.subject ?? "Product"} variant ${index + 1}`}
-                    title={activeGallery?.subject ?? "Product image"}
-                    initialIndex={index}
-                    gallery={variants
-                      .filter((item) => item.image)
-                      .map((item, itemIndex) => ({
-                        src: item.image?.url ?? "",
-                        alt: `${activeGallery?.subject ?? "Product"} variant ${itemIndex + 1}`,
-                      }))}
-                    trigger={
-                      <button
-                        type="button"
-                        className="bg-muted hover:bg-muted/80 overflow-hidden rounded-lg border text-left"
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={variant.image.url}
-                          alt={`${activeGallery?.subject ?? "Product"} variant ${index + 1}`}
-                          className="aspect-square w-full object-cover"
-                        />
-                      </button>
-                    }
-                  />
-                ) : (
-                  <div
-                    key={variant.id}
-                    className="text-muted-foreground bg-muted grid aspect-square place-items-center rounded-lg border text-sm"
-                  >
-                    No image
-                  </div>
-                ),
-              )}
-            </div>
-          </DialogContent>
-        </Dialog>
       </section>
     );
   }
@@ -2905,6 +2857,55 @@ function ProductWorkspacePanel({
             <Badge variant={activeVariant.image ? "default" : "outline"}>
               {form.variants.length} variant{form.variants.length === 1 ? "" : "s"}
             </Badge>
+          </div>
+
+          <div className="mb-4 grid gap-3">
+            <div className="relative">
+              <Search className="text-muted-foreground absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+              <Input
+                value={variantImageQuery}
+                onChange={(event) => setVariantImageQuery(event.target.value)}
+                className="pl-9"
+                placeholder="Search uploaded images by code, details, material..."
+                aria-label="Search uploaded product images"
+              />
+            </div>
+            <div className="grid max-h-48 grid-cols-3 gap-2 overflow-y-auto pr-1">
+              {visibleFormVariants.map((variant, index) => (
+                <button
+                  key={variant.id}
+                  type="button"
+                  className={cn(
+                    "bg-muted overflow-hidden rounded-md border text-left outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    activeVariant.id === variant.id && "ring-primary ring-2",
+                  )}
+                  onClick={() => setForm((current) => ({ ...current, activeVariantId: variant.id }))}
+                >
+                  {variant.image ? (
+                    <>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={variant.image.url}
+                        alt={`Uploaded variant ${index + 1}`}
+                        className="aspect-square w-full object-cover"
+                      />
+                      <span className="block truncate px-2 py-1 text-[0.68rem]">
+                        {variant.image.name}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-muted-foreground grid aspect-square place-items-center text-xs">
+                      No image
+                    </span>
+                  )}
+                </button>
+              ))}
+              {visibleFormVariants.length === 0 ? (
+                <p className="text-muted-foreground col-span-3 py-6 text-center text-sm">
+                  No uploaded images match.
+                </p>
+              ) : null}
+            </div>
           </div>
 
           <div className="mb-4 overflow-x-auto pb-1">

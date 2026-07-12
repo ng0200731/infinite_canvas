@@ -1,0 +1,343 @@
+"use client";
+
+import {
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactElement,
+  type WheelEvent,
+} from "react";
+import { Check, ImageIcon, Mouse, Move, Search } from "lucide-react";
+
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import {
+  filterProductImageGalleryItems,
+  getProductImageGalleryItems,
+  type ProductImageGalleryItem,
+} from "@/lib/product-image-gallery";
+import { supplierProductTypeLabels, type ProductRecord } from "@/lib/workspace-records";
+import { cn } from "@/lib/utils";
+
+interface ProductImageBrowserDialogProps {
+  products: readonly ProductRecord[];
+  title: string;
+  description?: string;
+  trigger: ReactElement;
+  selectedItemId?: string | null;
+  onSelect?: (item: ProductImageGalleryItem) => void;
+}
+
+interface Point {
+  x: number;
+  y: number;
+}
+
+interface DragState {
+  pointerId: number;
+  start: Point;
+  origin: Point;
+}
+
+const MIN_ZOOM = 1;
+const MAX_ZOOM = 5;
+const ZOOM_STEP = 0.2;
+
+function clampZoom(value: number): number {
+  return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
+}
+
+function ZoomableProductImage({ item }: { item: ProductImageGalleryItem }) {
+  const [zoom, setZoom] = useState(MIN_ZOOM);
+  const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const dragRef = useRef<DragState | null>(null);
+
+  const handleWheel = useCallback((event: WheelEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const direction = event.deltaY < 0 ? 1 : -1;
+    setZoom((current) => {
+      const nextZoom = clampZoom(Number((current + direction * ZOOM_STEP).toFixed(2)));
+      if (nextZoom === MIN_ZOOM) setPan({ x: 0, y: 0 });
+      return nextZoom;
+    });
+  }, []);
+
+  const handlePointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (zoom <= MIN_ZOOM) return;
+      event.preventDefault();
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+      dragRef.current = {
+        pointerId: event.pointerId,
+        start: { x: event.clientX, y: event.clientY },
+        origin: pan,
+      };
+      setIsPanning(true);
+    },
+    [pan, zoom],
+  );
+
+  const handlePointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    setPan({
+      x: drag.origin.x + event.clientX - drag.start.x,
+      y: drag.origin.y + event.clientY - drag.start.y,
+    });
+  }, []);
+
+  const stopPanning = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (drag?.pointerId !== event.pointerId) return;
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    dragRef.current = null;
+    setIsPanning(false);
+  }, []);
+
+  return (
+    <div
+      className={cn(
+        "bg-muted relative flex min-h-[20rem] touch-none items-center justify-center overflow-hidden rounded-md border",
+        zoom > MIN_ZOOM ? (isPanning ? "cursor-grabbing" : "cursor-grab") : "cursor-default",
+      )}
+      onWheel={handleWheel}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={stopPanning}
+      onPointerCancel={stopPanning}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={item.variant.image.url}
+        alt={`${item.product.subject} variant ${item.variantIndex + 1}`}
+        draggable={false}
+        className="max-h-full max-w-full object-contain transition-transform duration-100 ease-out select-none"
+        style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
+      />
+      <div className="pointer-events-none absolute bottom-3 left-1/2 flex max-w-[calc(100%-1.5rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-x-3 gap-y-1 rounded-md bg-black/75 px-3 py-2 text-xs font-medium text-white shadow-xl ring-1 ring-white/20">
+        <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+          <Mouse className="size-3.5" />
+          Scroll to zoom
+        </span>
+        <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+          <Move className="size-3.5" />
+          Drag to pan
+        </span>
+        <span className="whitespace-nowrap text-white/70">{Math.round(zoom * 100)}%</span>
+      </div>
+    </div>
+  );
+}
+
+function ProductDetails({
+  item,
+  selected,
+  onSelect,
+}: {
+  item: ProductImageGalleryItem;
+  selected: boolean;
+  onSelect?: (item: ProductImageGalleryItem) => void;
+}) {
+  return (
+    <aside className="bg-card flex min-h-0 flex-col gap-3 rounded-md border p-4">
+      <div className="flex flex-wrap gap-1">
+        <Badge variant="secondary">{supplierProductTypeLabels[item.product.productType]}</Badge>
+        <Badge variant="outline">Variant {item.variantIndex + 1}</Badge>
+      </div>
+      <div>
+        <p className="text-xs text-muted-foreground">Internal code</p>
+        <p className="font-medium">{item.product.subject}</p>
+      </div>
+      <div>
+        <p className="text-xs text-muted-foreground">Details</p>
+        <p className="text-sm leading-5">{item.product.detail}</p>
+      </div>
+      <div className="grid grid-cols-2 gap-3 text-sm">
+        <div>
+          <p className="text-xs text-muted-foreground">Material</p>
+          <p>{item.variant.material || "Unknown"}</p>
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground">Color</p>
+          <p>{item.variant.colorNotes || "Unknown"}</p>
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground">Price</p>
+          <p>
+            {item.variant.unitPrice} {item.variant.priceUnit}
+          </p>
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground">Image</p>
+          <p className="truncate">{item.variant.image.name}</p>
+        </div>
+      </div>
+      <div className="min-h-0 overflow-y-auto rounded-md border p-2">
+        <p className="mb-2 text-xs font-medium text-muted-foreground">Parameters</p>
+        <div className="grid gap-1 text-xs">
+          {Object.entries(item.variant.parameters).length ? (
+            Object.entries(item.variant.parameters).map(([key, value]) => (
+              <div key={key} className="grid grid-cols-[6rem_1fr] gap-2">
+                <span className="text-muted-foreground">{key}</span>
+                <span>{value || "-"}</span>
+              </div>
+            ))
+          ) : (
+            <p className="text-muted-foreground">No parameters saved.</p>
+          )}
+        </div>
+      </div>
+      {onSelect ? (
+        <Button type="button" className="mt-auto" onClick={() => onSelect(item)}>
+          {selected ? <Check /> : <ImageIcon />}
+          {selected ? "Selected" : "Select image"}
+        </Button>
+      ) : null}
+    </aside>
+  );
+}
+
+function ProductHoverDetails({ item }: { item: ProductImageGalleryItem }) {
+  return (
+    <div className="pointer-events-none absolute right-2 bottom-2 left-2 z-20 translate-y-1 rounded-md bg-black/82 p-2 text-[0.68rem] leading-4 text-white opacity-0 shadow-xl ring-1 ring-white/15 transition group-hover:translate-y-0 group-hover:opacity-100">
+      <p className="truncate font-semibold">{item.product.subject}</p>
+      <p className="line-clamp-2 text-white/80">{item.product.detail}</p>
+      <div className="mt-1 grid grid-cols-2 gap-x-2 gap-y-0.5 text-white/75">
+        <span className="truncate">Material: {item.variant.material || "-"}</span>
+        <span className="truncate">Color: {item.variant.colorNotes || "-"}</span>
+        <span className="truncate">
+          Price: {item.variant.unitPrice} {item.variant.priceUnit}
+        </span>
+        <span className="truncate">Image: {item.variant.image.name}</span>
+      </div>
+    </div>
+  );
+}
+
+export function ProductImageBrowserDialog({
+  products,
+  title,
+  description,
+  trigger,
+  selectedItemId = null,
+  onSelect,
+}: ProductImageBrowserDialogProps) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const allItems = useMemo(() => getProductImageGalleryItems(products), [products]);
+  const filteredItems = useMemo(
+    () => filterProductImageGalleryItems(allItems, query),
+    [allItems, query],
+  );
+  const [activeItemId, setActiveItemId] = useState<string | null>(selectedItemId);
+  const [previewItemId, setPreviewItemId] = useState<string | null>(null);
+  const preferredActiveItemId = activeItemId ?? selectedItemId;
+  const activeItem =
+    filteredItems.find((item) => item.id === preferredActiveItemId) ??
+    allItems.find((item) => item.id === selectedItemId) ??
+    filteredItems[0] ??
+    null;
+  const previewItem =
+    filteredItems.find((item) => item.id === previewItemId) ??
+    allItems.find((item) => item.id === previewItemId) ??
+    null;
+
+  function handleSelect(item: ProductImageGalleryItem) {
+    onSelect?.(item);
+    setOpen(false);
+    setPreviewItemId(null);
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (!nextOpen) setPreviewItemId(null);
+      }}
+    >
+      <DialogTrigger render={trigger} />
+      <DialogContent className="h-[calc(100dvh-2rem)] max-w-[calc(100vw-2rem)] grid-rows-[auto_1fr] overflow-hidden p-0 sm:max-w-[calc(100vw-2rem)]">
+        <DialogHeader className="border-b px-5 py-4 pr-12">
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>
+            {description ??
+              `${filteredItems.length} matching image${filteredItems.length === 1 ? "" : "s"}.`}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid min-h-0 gap-4 p-5">
+          {previewItem ? (
+            <div className="grid min-h-0 gap-4 lg:grid-cols-[7fr_3fr]">
+              <ZoomableProductImage key={previewItem.id} item={previewItem} />
+              <ProductDetails
+                item={previewItem}
+                selected={selectedItemId === previewItem.id}
+                onSelect={onSelect ? handleSelect : undefined}
+              />
+            </div>
+          ) : (
+            <>
+              <div className="relative max-w-xl">
+                <Search className="text-muted-foreground absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+                <Input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  className="pl-9"
+                  placeholder="Search internal code, details, material, color, parameters..."
+                  aria-label="Search product images"
+                />
+              </div>
+              {activeItem ? (
+                <div className="grid min-h-0 grid-cols-2 gap-3 overflow-y-auto pr-1 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+                  {filteredItems.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={cn(
+                        "bg-muted group relative overflow-hidden rounded-md border text-left outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        selectedItemId === item.id && "ring-primary ring-2",
+                      )}
+                      onClick={() => {
+                        setActiveItemId(item.id);
+                        setPreviewItemId(item.id);
+                      }}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={item.variant.image.url}
+                        alt={`${item.product.subject} variant ${item.variantIndex + 1}`}
+                        className="aspect-square w-full object-cover transition-transform group-hover:scale-[1.03]"
+                      />
+                      <ProductHoverDetails item={item} />
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-muted-foreground flex h-80 flex-col items-center justify-center gap-3 text-center text-sm">
+                  <ImageIcon className="size-8" />
+                  <p>
+                    {allItems.length
+                      ? "No product images match the search."
+                      : "No product images yet."}
+                  </p>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}

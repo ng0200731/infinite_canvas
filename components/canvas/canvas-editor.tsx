@@ -117,6 +117,20 @@ interface NodeConnectionTarget {
   nodeId: string;
 }
 
+type PendingGroupMembershipChange =
+  | {
+      kind: "add";
+      nodeId: string;
+      groupId: string;
+      center: XYPosition;
+    }
+  | {
+      kind: "leave";
+      nodeId: string;
+      groupId: string;
+      center: XYPosition;
+    };
+
 function getClientPoint(event: MouseEvent | TouchEvent): ClientPoint | null {
   if ("changedTouches" in event) {
     const touch = event.changedTouches[0] ?? event.touches[0];
@@ -210,6 +224,16 @@ function getNodeSizeFromData(node: CanvasNode, fallback: { width: number; height
   return {
     width: typeof node.data.width === "number" ? node.data.width : fallback.width,
     height: typeof node.data.height === "number" ? node.data.height : fallback.height,
+  };
+}
+
+function getGroupRectFromNode(node: CanvasNode): { x: number; y: number; w: number; h: number } {
+  const size = getNodeSizeFromData(node, { width: 320, height: 192 });
+  return {
+    x: node.position.x - size.width / 2,
+    y: node.position.y - size.height / 2,
+    w: size.width,
+    h: size.height,
   };
 }
 
@@ -435,6 +459,8 @@ function Editor({
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
   const [pendingGroupNodeIds, setPendingGroupNodeIds] = useState<string[]>([]);
   const [groupName, setGroupName] = useState("");
+  const [pendingGroupMembershipChange, setPendingGroupMembershipChange] =
+    useState<PendingGroupMembershipChange | null>(null);
   const connectedNoticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Live connection drag: which node the wire started from (source highlight)
@@ -751,30 +777,181 @@ function Editor({
     [],
   );
 
-  // Auto-attach grouping: when a node is dropped with its center over a group,
-  // parent it to that group (so it moves with the group); when dropped outside
-  // any group, release it back to the canvas. Positions are converted between
-  // absolute and parent-relative (nodeOrigin is [0.5,0.5], so position = center).
+  const fitGroupToChildren = useCallback(
+    (
+      groupId: string,
+      nodesToFit: CanvasNode[],
+      centersByNodeId = new Map<string, XYPosition>(),
+    ): CanvasNode[] => {
+      const group = nodesToFit.find((node) => node.id === groupId);
+      if (!group) return nodesToFit;
+      const children = nodesToFit.filter((node) => node.parentId === groupId);
+      if (children.length === 0) return nodesToFit;
+
+      const groupRect = rectOf(getInternalNode(groupId)) ?? getGroupRectFromNode(group);
+      const padding = 40;
+      const childRects = children
+        .map((child) => {
+          const measured = rectOf(getInternalNode(child.id));
+          const center = centersByNodeId.get(child.id);
+          if (measured) return { id: child.id, ...measured };
+          const size = getNodeSizeFromData(child, { width: 220, height: 160 });
+          const cx = center?.x ?? groupRect.x + child.position.x;
+          const cy = center?.y ?? groupRect.y + child.position.y;
+          return {
+            id: child.id,
+            x: cx - size.width / 2,
+            y: cy - size.height / 2,
+            w: size.width,
+            h: size.height,
+            cx,
+            cy,
+          };
+        })
+        .filter((rect) => rect.w > 0 && rect.h > 0);
+      if (childRects.length === 0) return nodesToFit;
+
+      const left = Math.min(...childRects.map((rect) => rect.x)) - padding;
+      const top = Math.min(...childRects.map((rect) => rect.y)) - padding;
+      const right = Math.max(...childRects.map((rect) => rect.x + rect.w)) + padding;
+      const bottom = Math.max(...childRects.map((rect) => rect.y + rect.h)) + padding;
+      const nextWidth = right - left;
+      const nextHeight = bottom - top;
+
+      return reorderChildrenAfterParents(
+        nodesToFit.map((node) => {
+          if (node.id === groupId) {
+            return {
+              ...node,
+              position: { x: left + nextWidth / 2, y: top + nextHeight / 2 },
+              data: { ...node.data, width: nextWidth, height: nextHeight },
+            };
+          }
+          if (node.parentId !== groupId) return node;
+          const rect = childRects.find((candidate) => candidate.id === node.id);
+          const measured = rectOf(getInternalNode(node.id));
+          const center = centersByNodeId.get(node.id);
+          const cx = center?.x ?? rect?.cx ?? measured?.cx ?? groupRect.x + node.position.x;
+          const cy = center?.y ?? rect?.cy ?? measured?.cy ?? groupRect.y + node.position.y;
+          return { ...node, position: { x: cx - left, y: cy - top } };
+        }),
+      );
+    },
+    [getInternalNode],
+  );
+
+  const detachNodeFromGroup = useCallback(
+    (nodeId: string, centerOverride?: XYPosition) => {
+      let sourceGroupId: string | null = null;
+      setCanvasNodes((current) => {
+        const node = current.find((candidate) => candidate.id === nodeId);
+        if (!node?.parentId) return current;
+        sourceGroupId = node.parentId;
+        const measured = rectOf(getInternalNode(nodeId));
+        const center = centerOverride ?? (measured ? { x: measured.cx, y: measured.cy } : node.position);
+        const detachedNodes = current.map((candidate) => {
+          if (candidate.id !== nodeId) return candidate;
+          const detached = { ...candidate, position: center };
+          delete detached.parentId;
+          return detached;
+        });
+        return fitGroupToChildren(sourceGroupId, detachedNodes);
+      });
+      if (sourceGroupId) toast.success("Node removed from group");
+    },
+    [fitGroupToChildren, getInternalNode, setCanvasNodes],
+  );
+
+  const addNodeToGroup = useCallback(
+    (nodeId: string, groupId: string, center: XYPosition) => {
+      setCanvasNodes((current) => {
+        const group = current.find((candidate) => candidate.id === groupId);
+        if (!group) return current;
+        const groupRect = rectOf(getInternalNode(groupId)) ?? getGroupRectFromNode(group);
+        const nextNodes = current.map((node) => {
+          if (node.id !== nodeId) return node;
+          return {
+            ...node,
+            parentId: groupId,
+            position: { x: center.x - groupRect.x, y: center.y - groupRect.y },
+          };
+        });
+        return fitGroupToChildren(groupId, nextNodes, new Map([[nodeId, center]]));
+      });
+      toast.success("Node added to group");
+    },
+    [fitGroupToChildren, getInternalNode, setCanvasNodes],
+  );
+
+  const keepNodeInGroupAndFit = useCallback(
+    (nodeId: string, groupId: string, center: XYPosition) => {
+      setCanvasNodes((current) =>
+        fitGroupToChildren(
+          groupId,
+          current.map((node) =>
+            node.id === nodeId
+              ? {
+                  ...node,
+                  parentId: groupId,
+                  position: node.position,
+                }
+              : node,
+          ),
+          new Map([[nodeId, center]]),
+        ),
+      );
+    },
+    [fitGroupToChildren, setCanvasNodes],
+  );
+
+  function confirmPendingGroupMembershipChange() {
+    if (!pendingGroupMembershipChange) return;
+    if (pendingGroupMembershipChange.kind === "add") {
+      addNodeToGroup(
+        pendingGroupMembershipChange.nodeId,
+        pendingGroupMembershipChange.groupId,
+        pendingGroupMembershipChange.center,
+      );
+    } else {
+      detachNodeFromGroup(
+        pendingGroupMembershipChange.nodeId,
+        pendingGroupMembershipChange.center,
+      );
+    }
+    setPendingGroupMembershipChange(null);
+  }
+
+  function cancelPendingGroupMembershipChange() {
+    if (pendingGroupMembershipChange?.kind === "leave") {
+      keepNodeInGroupAndFit(
+        pendingGroupMembershipChange.nodeId,
+        pendingGroupMembershipChange.groupId,
+        pendingGroupMembershipChange.center,
+      );
+    }
+    setPendingGroupMembershipChange(null);
+  }
+
+  // Group membership changes are explicit: dropping into or out of a group
+  // opens a confirmation dialog, then geometry is fitted around the result.
   const onNodeDragStop = useCallback(
     (_event: MouseEvent | TouchEvent, _node: CanvasNode, draggedNodes: CanvasNode[]) => {
+      if (pendingGroupMembershipChange) return;
       const allNodes = getNodes();
-      // Group bounds (top-left + size); absolute geometry comes from the
-      // internal node store (plain nodes only carry parent-relative positions).
       const groups = new Map<string, { x: number; y: number; w: number; h: number }>();
       for (const n of allNodes) {
         if (n.type !== "group") continue;
         const r = rectOf(getInternalNode(n.id));
         if (r) groups.set(n.id, r);
+        else groups.set(n.id, getGroupRectFromNode(n));
       }
       if (groups.size === 0) return;
 
       const draggedIds = new Set(draggedNodes.map((n) => n.id));
-      const reparent = new Map<string, { parentId: string | null; position: XYPosition }>();
       for (const n of allNodes) {
         if (!draggedIds.has(n.id) || n.type === "group") continue;
         const r = rectOf(getInternalNode(n.id));
         if (!r) continue;
-        // Attach when the node's CENTER lands inside a group's bounds.
         let target: string | null = null;
         for (const [gid, g] of groups) {
           if (r.cx >= g.x && r.cx <= g.x + g.w && r.cy >= g.y && r.cy <= g.y + g.h) {
@@ -784,31 +961,29 @@ function Editor({
         }
         const current = n.parentId ?? null;
         if (target === current) continue;
-        if (target) {
-          const g = groups.get(target)!;
-          // Keep the node's center fixed: stored position (center, nodeOrigin
-          // 0.5) relative to the group's top-left = center - groupTopLeft.
-          reparent.set(n.id, { parentId: target, position: { x: r.cx - g.x, y: r.cy - g.y } });
-        } else {
-          // Detach to top-level: stored position = absolute center.
-          reparent.set(n.id, { parentId: null, position: { x: r.cx, y: r.cy } });
+
+        if (current && target !== current) {
+          setPendingGroupMembershipChange({
+            kind: "leave",
+            nodeId: n.id,
+            groupId: current,
+            center: { x: r.cx, y: r.cy },
+          });
+          return;
+        }
+
+        if (!current && target) {
+          setPendingGroupMembershipChange({
+            kind: "add",
+            nodeId: n.id,
+            groupId: target,
+            center: { x: r.cx, y: r.cy },
+          });
+          return;
         }
       }
-      if (reparent.size === 0) return;
-
-      setCanvasNodes((nds) => {
-        const next = nds.map((n) => {
-          const r = reparent.get(n.id);
-          if (!r) return n;
-          const updated = { ...n, position: r.position };
-          if (r.parentId) updated.parentId = r.parentId;
-          else delete updated.parentId;
-          return updated;
-        });
-        return reorderChildrenAfterParents(next);
-      });
     },
-    [getNodes, getInternalNode, setCanvasNodes],
+    [getInternalNode, getNodes, pendingGroupMembershipChange],
   );
 
   // Release children to the canvas when their group is removed via React Flow's
@@ -1071,7 +1246,7 @@ function Editor({
 
   const addNodeAtPosition = useCallback(
     (type: NodeType, position: XYPosition) => {
-      const node = createNode(type, findNewNodePosition(position, nodesRef.current));
+      let targetGroupId: string | null = null;
       if (type !== "group") {
         const parentGroup = getNodes().find((candidate) => {
           if (candidate.type !== "group") return false;
@@ -1095,21 +1270,22 @@ function Editor({
           );
         });
         if (parentGroup) {
-          const measuredRect = rectOf(getInternalNode(parentGroup.id));
-          const rect =
-            measuredRect ??
-            (() => {
-              const size = getNodeSizeFromData(parentGroup, { width: 320, height: 192 });
-              return {
-                x: parentGroup.position.x - size.width / 2,
-                y: parentGroup.position.y - size.height / 2,
-              };
-            })();
-          node.parentId = parentGroup.id;
-          node.position = { x: position.x - rect.x, y: position.y - rect.y };
+          targetGroupId = parentGroup.id;
         }
       }
+      const node = createNode(
+        type,
+        targetGroupId ? position : findNewNodePosition(position, nodesRef.current),
+      );
       setCanvasNodes((nds) => appendSelectedNode(nds, node));
+      if (targetGroupId) {
+        setPendingGroupMembershipChange({
+          kind: "add",
+          nodeId: node.id,
+          groupId: targetGroupId,
+          center: position,
+        });
+      }
       if (nodeNeedsInitialFieldFocus(type)) {
         focusNewNodeField(node.id);
       }
@@ -1249,6 +1425,7 @@ function Editor({
       deleteNode,
       ungroupNode,
       disconnectGroupNode,
+      leaveGroupNode: detachNodeFromGroup,
       deleteEdge,
       resizeNode,
     }),
@@ -1262,6 +1439,7 @@ function Editor({
       deleteNode,
       ungroupNode,
       disconnectGroupNode,
+      detachNodeFromGroup,
       deleteEdge,
       resizeNode,
     ],
@@ -1389,6 +1567,34 @@ function Editor({
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={pendingGroupMembershipChange !== null}
+        onOpenChange={(open) => {
+          if (!open) cancelPendingGroupMembershipChange();
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {pendingGroupMembershipChange?.kind === "add" ? "Add to group?" : "Leave group?"}
+            </DialogTitle>
+            <DialogDescription>
+              {pendingGroupMembershipChange?.kind === "add"
+                ? "Add this node to the group and resize the group rectangle around it."
+                : "Remove this node from the group. If you cancel, the group rectangle will expand around the node's new position."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={cancelPendingGroupMembershipChange}>
+              No
+            </Button>
+            <Button type="button" onClick={confirmPendingGroupMembershipChange}>
+              Yes
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

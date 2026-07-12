@@ -1,11 +1,13 @@
 "use client";
 
 import { type NodeProps } from "@xyflow/react";
-import { Package, Search, X } from "lucide-react";
+import { BookOpen, ImageIcon, Package, Search, X } from "lucide-react";
 
+import { ProductImageBrowserDialog } from "@/components/product-image-browser-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useProducts, useSuppliers } from "@/lib/hooks/use-workspace-records";
+import type { ProductImageGalleryItem } from "@/lib/product-image-gallery";
 import { NODE_PORT_COLORS } from "@/lib/nodes/ports";
 import type { SupplerCanvasNode } from "@/lib/nodes/types";
 import {
@@ -20,7 +22,7 @@ import { InputPort, OutputPort } from "./port";
 import { ResizeHandle } from "./resize-handle";
 
 const DEFAULT_WIDTH = 280;
-const DEFAULT_HEIGHT = 320;
+const DEFAULT_HEIGHT = 420;
 
 function normalizeQuery(value: string): string {
   return value.trim().toLocaleLowerCase();
@@ -51,7 +53,15 @@ export function SupplerNode({ id, data, parentId, selected }: NodeProps<SupplerC
   const selectedProductType = data.selectedProductType;
   const productTypeQuery = data.productTypeQuery ?? "";
   const supplierQuery = data.supplierQuery ?? "";
+  const alias = typeof data.alias === "string" ? data.alias : "supplier";
   const supplierProducts = products.data ?? [];
+  const selectedSupplierProducts = supplierProducts.filter(
+    (product) =>
+      product.supplierId === data.supplierId &&
+      (!selectedProductType || product.productType === selectedProductType),
+  );
+  const selectedGalleryItemId =
+    data.productId && data.variantId ? `${data.productId}:${data.variantId}` : null;
   const productTypes = supplierProductTypes.filter((productType) =>
     fuzzyIncludes(supplierProductTypeLabels[productType], productTypeQuery),
   );
@@ -92,6 +102,21 @@ export function SupplerNode({ id, data, parentId, selected }: NodeProps<SupplerC
       supplierId: null,
       supplierName: null,
       supplierQuery: "",
+      productId: null,
+      productSubject: null,
+      variantId: null,
+      variantImageUrl: null,
+      variantImageName: null,
+    });
+  }
+
+  function selectProductImage(item: ProductImageGalleryItem) {
+    updateNodeData(id, {
+      productId: item.product.id,
+      productSubject: item.product.subject,
+      variantId: item.variant.id,
+      variantImageUrl: item.variant.image.url,
+      variantImageName: item.variant.image.name,
     });
   }
 
@@ -114,6 +139,14 @@ export function SupplerNode({ id, data, parentId, selected }: NodeProps<SupplerC
         <Package className="size-4" />
         Supplier
       </div>
+
+      <Input
+        value={alias}
+        onChange={(event) => updateNodeData(id, { alias: event.target.value })}
+        placeholder="alias"
+        aria-label="Supplier image alias"
+        className="nodrag h-8 text-xs"
+      />
 
       <div className="grid gap-1.5">
         <div className="relative">
@@ -140,14 +173,19 @@ export function SupplerNode({ id, data, parentId, selected }: NodeProps<SupplerC
               variant="ghost"
               aria-label="Clear product type"
               className="nodrag absolute top-1/2 right-1 size-6 -translate-y-1/2"
-              onClick={() =>
-                updateNodeData(id, {
-                  selectedProductType: null,
-                  productTypeQuery: "",
-                  supplierId: null,
-                  supplierName: null,
-                })
-              }
+                onClick={() =>
+                  updateNodeData(id, {
+                    selectedProductType: null,
+                    productTypeQuery: "",
+                    supplierId: null,
+                    supplierName: null,
+                    productId: null,
+                    productSubject: null,
+                    variantId: null,
+                    variantImageUrl: null,
+                    variantImageName: null,
+                  })
+                }
             >
               <X className="size-3" />
             </Button>
@@ -203,6 +241,11 @@ export function SupplerNode({ id, data, parentId, selected }: NodeProps<SupplerC
                     supplierId: supplier.id,
                     supplierName: supplier.company.companyName,
                     supplierQuery: supplier.company.companyName,
+                    productId: null,
+                    productSubject: null,
+                    variantId: null,
+                    variantImageUrl: null,
+                    variantImageName: null,
                   })
                 }
               >
@@ -220,8 +263,77 @@ export function SupplerNode({ id, data, parentId, selected }: NodeProps<SupplerC
         </div>
       </div>
 
+      <div className="grid gap-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-muted-foreground truncate text-xs">
+            {data.supplierName ?? "No supplier selected"}
+          </p>
+          {data.supplierId ? (
+            <ProductImageBrowserDialog
+              products={selectedSupplierProducts}
+              title={`${data.supplierName ?? "Supplier"} product images`}
+              selectedItemId={selectedGalleryItemId}
+              onSelect={selectProductImage}
+              trigger={
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant="outline"
+                  aria-label="Open supplier product image book"
+                  title="Open supplier product image book"
+                  className="nodrag"
+                  disabled={selectedSupplierProducts.length === 0}
+                >
+                  <BookOpen />
+                </Button>
+              }
+            />
+          ) : null}
+        </div>
+        {data.variantImageUrl ? (
+          <div className="bg-muted overflow-hidden rounded-md border">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={data.variantImageUrl}
+              alt={data.variantImageName ?? data.productSubject ?? "Selected supplier product"}
+              className="aspect-video w-full object-cover"
+            />
+            <div className="flex items-center justify-between gap-2 p-2">
+              <span className="min-w-0 truncate text-xs font-medium">
+                {data.productSubject ?? data.variantImageName ?? "Selected image"}
+              </span>
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="ghost"
+                aria-label="Remove selected supplier image"
+                className="nodrag"
+                onClick={() =>
+                  updateNodeData(id, {
+                    productId: null,
+                    productSubject: null,
+                    variantId: null,
+                    variantImageUrl: null,
+                    variantImageName: null,
+                  })
+                }
+              >
+                <X />
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="text-muted-foreground bg-muted/50 grid min-h-20 place-items-center rounded-md border border-dashed text-xs">
+            <span className="inline-flex items-center gap-2">
+              <ImageIcon className="size-4" />
+              Select image from book
+            </span>
+          </div>
+        )}
+      </div>
+
       <OutputPort color={NODE_PORT_COLORS.suppler} />
-      <ResizeHandle nodeId={id} width={width} height={height} minWidth={240} minHeight={260} />
+      <ResizeHandle nodeId={id} width={width} height={height} minWidth={240} minHeight={360} />
     </div>
   );
 }

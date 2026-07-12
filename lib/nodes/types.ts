@@ -93,11 +93,17 @@ export interface OutputNodeData {
 }
 
 export interface SupplerNodeData {
+  alias: string;
   selectedProductType: SupplierProductType | null;
   productTypeQuery: string;
   supplierQuery: string;
   supplierId: string | null;
   supplierName: string | null;
+  productId: string | null;
+  productSubject: string | null;
+  variantId: string | null;
+  variantImageUrl: string | null;
+  variantImageName: string | null;
   title?: string;
   notes?: string;
   status?: "draft" | "ready" | "blocked";

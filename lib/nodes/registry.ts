@@ -103,11 +103,17 @@ export const NODE_META: Record<NodeType, NodeMeta> = {
     description: "Choose supplier product references",
     palette: true,
     defaultData: () => ({
+      alias: "supplier",
       selectedProductType: null,
       productTypeQuery: "",
       supplierQuery: "",
       supplierId: null,
       supplierName: null,
+      productId: null,
+      productSubject: null,
+      variantId: null,
+      variantImageUrl: null,
+      variantImageName: null,
     }),
   },
   action: {

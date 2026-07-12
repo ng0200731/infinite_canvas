@@ -8,12 +8,15 @@ import {
   Sparkles,
   Square,
   StickyNote,
+  X,
   Zap,
   type LucideIcon,
 } from "lucide-react";
 
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { NODE_META, PALETTE_NODE_TYPES } from "@/lib/nodes/registry";
 import type { CanvasNode, NodeType } from "@/lib/nodes/types";
+import { useCanvasActions } from "./canvas-context";
 
 const ICONS: Record<NodeType, LucideIcon> = {
   note: StickyNote,
@@ -53,6 +56,7 @@ export function NodePalette({
   nodes: CanvasNode[];
   onAdd: (type: NodeType) => void;
 }) {
+  const { leaveGroupNode } = useCanvasActions();
   const groupNodes = nodes.filter((node) => node.type === "group");
 
   return (
@@ -96,9 +100,31 @@ export function NodePalette({
                 <div className="text-muted-foreground mt-1 grid gap-1">
                   {children.length ? (
                     children.map((child) => (
-                      <p key={child.id} className="truncate">
-                        {NODE_META[child.type].label}: {nodeDisplayName(child)}
-                      </p>
+                      <div
+                        key={child.id}
+                        className="group/child flex min-w-0 items-center gap-1"
+                      >
+                        <p className="min-w-0 flex-1 truncate">
+                          {NODE_META[child.type].label}: {nodeDisplayName(child)}
+                        </p>
+                        <ConfirmDialog
+                          title="Leave group?"
+                          description="Remove this node from the group while preserving its canvas position."
+                          confirmLabel="Leave"
+                          destructive={false}
+                          onConfirm={() => leaveGroupNode(child.id)}
+                          trigger={
+                            <button
+                              type="button"
+                              aria-label={`Remove ${nodeDisplayName(child)} from group`}
+                              title="Remove from group"
+                              className="text-muted-foreground hover:text-destructive focus-visible:ring-ring grid size-5 shrink-0 place-items-center rounded opacity-0 outline-none transition-opacity group-hover/child:opacity-100 focus-visible:opacity-100 focus-visible:ring-2"
+                            >
+                              <X className="size-3" />
+                            </button>
+                          }
+                        />
+                      </div>
                     ))
                   ) : (
                     <p>No nodes</p>

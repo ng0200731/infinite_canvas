@@ -16,28 +16,65 @@ import {
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { downloadImageFile } from "@/lib/download-image";
-import { getModelDisplayName } from "@/lib/image-generation-models";
+import {
+  getModelDisplayName,
+  imageGenerationModelIdSchema,
+  resolutionForImageGenerationModel,
+} from "@/lib/image-generation-models";
 import { getCanvasStore, type ImageRecord } from "@/lib/store";
 
 interface RenderGalleryDialogProps {
   canvasId: string;
 }
 
-function resolutionBadge(image: ImageRecord): string {
-  return image.modelDetails?.resolution ?? "Unknown";
+interface ImageDimensions {
+  width: number;
+  height: number;
 }
 
-function sizeBadge(image: ImageRecord): string {
+function resolutionBadge(image: ImageRecord): string {
+  if (image.modelDetails?.resolution) return image.modelDetails.resolution;
+  const parsedModel = imageGenerationModelIdSchema.safeParse(image.model);
+  return parsedModel.success ? resolutionForImageGenerationModel(parsedModel.data) : "Preview";
+}
+
+function sizeBadge(image: ImageRecord, dimensions?: ImageDimensions): string {
   const size = image.modelDetails?.size;
   if (size === "1024x1024") return "Square";
   if (size === "1536x1024") return "Wide";
   if (size === "1024x1536") return "Tall";
-  return "Unknown";
+  if (dimensions) {
+    if (dimensions.width > dimensions.height) return "Wide";
+    if (dimensions.height > dimensions.width) return "Tall";
+  }
+  return "Square";
+}
+
+function formatFromUrl(url: string): string | null {
+  if (url.startsWith("data:image/")) {
+    const match = url.match(/^data:image\/([^;,]+)/i);
+    return match?.[1] ? match[1].replace("jpeg", "jpg").toUpperCase() : null;
+  }
+
+  try {
+    const pathname = new URL(url).pathname;
+    const extension = pathname.split(".").pop()?.toLowerCase();
+    if (extension === "jpg" || extension === "jpeg") return "JPG";
+    if (extension === "png") return "PNG";
+    if (extension === "webp") return "WEBP";
+  } catch {
+    const extension = url.split("?")[0]?.split(".").pop()?.toLowerCase();
+    if (extension === "jpg" || extension === "jpeg") return "JPG";
+    if (extension === "png") return "PNG";
+    if (extension === "webp") return "WEBP";
+  }
+
+  return null;
 }
 
 function formatBadge(image: ImageRecord): string {
   const format = image.modelDetails?.outputFormat?.toUpperCase();
-  return format || "Unknown";
+  return format?.replace("JPEG", "JPG") || formatFromUrl(image.url) || "WEBP";
 }
 
 function modelSummary(image: ImageRecord): string {
@@ -63,6 +100,7 @@ export function RenderGalleryDialog({ canvasId }: RenderGalleryDialogProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [dimensions, setDimensions] = useState<Record<string, ImageDimensions>>({});
   const previewItems = images.map((image) => ({
     src: image.url,
     alt: image.prompt ?? "Generated image",
@@ -153,6 +191,16 @@ export function RenderGalleryDialog({ canvasId }: RenderGalleryDialogProps) {
                             src={image.url}
                             alt={image.prompt ?? "Generated image"}
                             className="size-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
+                            onLoad={(event) => {
+                              const target = event.currentTarget;
+                              setDimensions((current) => ({
+                                ...current,
+                                [image.id]: {
+                                  width: target.naturalWidth,
+                                  height: target.naturalHeight,
+                                },
+                              }));
+                            }}
                           />
                         </button>
                       }
@@ -177,7 +225,7 @@ export function RenderGalleryDialog({ canvasId }: RenderGalleryDialogProps) {
                   <div className="flex min-h-32 flex-col gap-2 p-3">
                     <div className="flex flex-wrap gap-1">
                       <Badge variant="secondary">{resolutionBadge(image)}</Badge>
-                      <Badge variant="secondary">{sizeBadge(image)}</Badge>
+                      <Badge variant="secondary">{sizeBadge(image, dimensions[image.id])}</Badge>
                       <Badge variant="secondary">{formatBadge(image)}</Badge>
                     </div>
                     <p className="text-foreground line-clamp-3 text-xs leading-5">
