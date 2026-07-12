@@ -10,6 +10,38 @@ interface EmailPostHandlerOptions<Input> {
   authorize?: () => Promise<boolean>;
 }
 
+function hasErrorCode(error: unknown, code: string): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code: unknown }).code === code
+  );
+}
+
+function isEmailConfigurationError(error: unknown): error is EmailConfigurationError {
+  return (
+    error instanceof EmailConfigurationError || hasErrorCode(error, "EMAIL_CONFIGURATION_ERROR")
+  );
+}
+
+function isEmailDeliveryError(error: unknown): error is EmailDeliveryError {
+  return error instanceof EmailDeliveryError || hasErrorCode(error, "EMAIL_DELIVERY_ERROR");
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "message" in error &&
+    typeof (error as { message: unknown }).message === "string"
+  ) {
+    return (error as { message: string }).message;
+  }
+  return "Email delivery failed.";
+}
+
 export function createEmailPostHandler<Input>({
   requestSchema,
   deliver,
@@ -39,12 +71,15 @@ export function createEmailPostHandler<Input>({
       const result = emailDeliveryResponseSchema.parse(await deliver(parsed.data));
       return NextResponse.json(result);
     } catch (error) {
-      if (error instanceof EmailConfigurationError) {
-        return NextResponse.json({ error: error.message }, { status: 503 });
+      if (isEmailConfigurationError(error)) {
+        return NextResponse.json({ error: errorMessage(error) }, { status: 503 });
       }
-      if (error instanceof EmailDeliveryError) {
-        return NextResponse.json({ error: error.message }, { status: 502 });
+      if (isEmailDeliveryError(error)) {
+        return NextResponse.json({ error: errorMessage(error) }, { status: 502 });
       }
+      console.error("Email route failed before provider delivery completed.", {
+        errorName: error instanceof Error ? error.name : "UnknownError",
+      });
       return NextResponse.json(
         { error: "Email delivery failed. Check the server configuration and try again." },
         { status: 502 },

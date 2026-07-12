@@ -81,4 +81,23 @@ describe("POST /api/email/send", () => {
       error: "Email delivery failed. Check the server configuration and try again.",
     });
   });
+
+  it("recognizes delivery errors by stable code", async () => {
+    const handler = createEmailPostHandler({
+      requestSchema: sendCanvasEmailRequestSchema,
+      deliver: vi.fn().mockRejectedValue({
+        code: "EMAIL_DELIVERY_ERROR",
+        message:
+          "Email delivery failed using 163.com and Gmail. Check the SMTP credentials in Settings > SMTP setting.",
+      }),
+    });
+
+    const response = await handler(request(validBody));
+
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toEqual({
+      error:
+        "Email delivery failed using 163.com and Gmail. Check the SMTP credentials in Settings > SMTP setting.",
+    });
+  });
 });

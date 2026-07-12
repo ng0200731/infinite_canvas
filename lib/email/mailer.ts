@@ -55,6 +55,8 @@ const dataImageSchema = z.object({
 });
 
 export class EmailConfigurationError extends Error {
+  readonly code = "EMAIL_CONFIGURATION_ERROR";
+
   constructor() {
     super(
       "Email delivery is not configured. Add the server-side SMTP environment variables, then restart or redeploy the app.",
@@ -64,6 +66,8 @@ export class EmailConfigurationError extends Error {
 }
 
 export class EmailDeliveryError extends Error {
+  readonly code = "EMAIL_DELIVERY_ERROR";
+
   constructor(providerNames: readonly string[]) {
     super(
       `Email delivery failed using ${providerNames.join(" and ")}. Check the SMTP credentials in Settings > SMTP setting.`,
@@ -180,6 +184,8 @@ export interface PreparedMail {
   attachments: NonNullable<SendMailOptions["attachments"]>;
 }
 
+type CanvasReportPdfRenderer = typeof renderCanvasReportPdf;
+
 export function prepareCanvasMail(input: SendCanvasEmailRequest): PreparedMail {
   const attachments: NonNullable<SendMailOptions["attachments"]> = [];
   const textImages: string[] = [];
@@ -234,23 +240,39 @@ export function prepareTestMail(): PreparedMail {
 
 export async function prepareCanvasReportMail(
   input: SendCanvasReportEmailRequest,
+  renderPdf: CanvasReportPdfRenderer = renderCanvasReportPdf,
 ): Promise<PreparedMail> {
-  const pdf = await renderCanvasReportPdf({
-    title: input.subject,
-    customerName: input.canvasName,
-    text: input.text,
-  });
+  try {
+    const pdf = await renderPdf({
+      title: input.subject,
+      customerName: input.canvasName,
+      text: input.text,
+    });
+    return {
+      subject: input.subject,
+      text: input.text,
+      html: input.html,
+      attachments: [
+        {
+          filename: input.pdfFilename,
+          content: pdf,
+          contentType: "application/pdf",
+        },
+      ],
+    };
+  } catch (error) {
+    console.error("Canvas report PDF generation failed; sending email without attachment.", {
+      errorName: error instanceof Error ? error.name : "UnknownError",
+    });
+  }
+
+  const fallbackNote =
+    "PDF attachment could not be generated, so this report was sent as email content only.";
   return {
     subject: input.subject,
-    text: input.text,
-    html: input.html,
-    attachments: [
-      {
-        filename: input.pdfFilename,
-        content: pdf,
-        contentType: "application/pdf",
-      },
-    ],
+    text: `${input.text}\n\n${fallbackNote}`,
+    html: `${input.html}<p>${escapeHtml(fallbackNote)}</p>`,
+    attachments: [],
   };
 }
 

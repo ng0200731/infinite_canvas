@@ -133,8 +133,8 @@ function SendCanvasDialog({
           <DialogHeader>
             <DialogTitle>Send canvas report</DialogTitle>
             <DialogDescription>
-              Sends the full canvas report as HTML and attaches a PDF copy. 163.com is tried first,
-              then Gmail; an optional local SMTP catcher overrides both.
+              Sends the full canvas report by local server email. 163.com is tried first, then
+              Gmail; a PDF copy is attached when available.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-2">

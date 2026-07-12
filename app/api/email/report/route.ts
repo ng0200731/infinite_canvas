@@ -3,6 +3,8 @@ import { deliverCanvasReportEmail } from "@/lib/email/mailer";
 import { createEmailPostHandler } from "@/lib/email/route-handler";
 import { sendCanvasReportEmailRequestSchema } from "@/lib/email/schemas";
 
+export const runtime = "nodejs";
+
 export const POST = createEmailPostHandler({
   requestSchema: sendCanvasReportEmailRequestSchema,
   authorize: authorizeEmailDelivery,

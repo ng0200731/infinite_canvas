@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createEmailDelivery,
   prepareCanvasMail,
+  prepareCanvasReportMail,
   type MailTransportFactory,
   type SmtpProviderConfig,
 } from "@/lib/email/mailer";
@@ -133,5 +134,30 @@ describe("SMTP email delivery", () => {
     expect(prepared.html).toContain('src="cid:canvas-render-1@infinite-canvas"');
     expect(prepared.html).toContain("https://images.example.com/render.webp");
     expect(prepared.text).toContain("attached as canvas-render-01.png");
+  });
+
+  it("keeps report email delivery possible when PDF rendering fails", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const prepared = await prepareCanvasReportMail(
+      {
+        to: "recipient@example.com",
+        canvasName: "Campaign board",
+        subject: "Campaign board canvas report",
+        html: "<p>Report body</p>",
+        text: "Report body",
+        pdfFilename: "campaign-board-report.pdf",
+      },
+      async () => {
+        throw new Error("PDF render failed");
+      },
+    );
+
+    expect(prepared.attachments).toEqual([]);
+    expect(prepared.text).toContain("Report body");
+    expect(prepared.text).toContain("email content only");
+    expect(prepared.html).toContain("email content only");
+
+    errorSpy.mockRestore();
   });
 });

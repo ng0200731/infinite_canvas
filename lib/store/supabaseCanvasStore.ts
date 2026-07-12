@@ -152,6 +152,8 @@ const canvasEdgeRowSchema = z.object({
   sort_index: z.number().int(),
 });
 
+const PRODUCT_NODE_COMPAT_TYPE_KEY = "__canvasNodeType";
+
 const mapProject = (value: unknown): Project => {
   const r: ProjectRow = projectRowSchema.parse(value);
   const metadata = mergeProjectMetadata(
@@ -258,9 +260,13 @@ function toUnknownArray(value: unknown): unknown[] {
 function buildNodeFromRow(value: unknown) {
   const row = canvasNodeRowSchema.parse(value);
   const node: Record<string, unknown> = isRecord(row.raw) ? { ...row.raw } : {};
+  const type =
+    row.type === "suppler" && row.data[PRODUCT_NODE_COMPAT_TYPE_KEY] === "product"
+      ? "product"
+      : row.type;
 
   node.id = row.id;
-  node.type = row.type;
+  node.type = type;
   node.position = row.position;
   node.data = row.data;
   if (row.parent_id) {
@@ -270,6 +276,31 @@ function buildNodeFromRow(value: unknown) {
   }
 
   return parseCanvasNode(node);
+}
+
+function productNodesAsSupplerCompat(content: CanvasContent): CanvasContent {
+  return {
+    nodes: content.nodes.map((node) =>
+      node.type === "product"
+        ? {
+            ...node,
+            type: "suppler",
+            data: {
+              ...node.data,
+              [PRODUCT_NODE_COMPAT_TYPE_KEY]: "product",
+            },
+          }
+        : node,
+    ),
+    edges: content.edges,
+  };
+}
+
+function isCanvasNodeTypeConstraintError(message: string): boolean {
+  return (
+    message.includes("canvas_nodes_type_check") ||
+    (message.includes("canvas_nodes") && message.includes("violates check constraint"))
+  );
 }
 
 function buildEdgeFromRow(value: unknown) {
@@ -510,6 +541,17 @@ export function createSupabaseCanvasStore(): CanvasStore {
         p_edges: validContent.edges,
         p_nodes: validContent.nodes,
       });
+      if (error && isCanvasNodeTypeConstraintError(error.message)) {
+        const compatContent = productNodesAsSupplerCompat(validContent);
+        const retry = await supabase.rpc("replace_canvas_graph", {
+          p_canvas_id: id,
+          p_content: compatContent,
+          p_edges: compatContent.edges,
+          p_nodes: compatContent.nodes,
+        });
+        assertNoError(retry, "saveCanvasContent");
+        return;
+      }
       assertNoError({ error }, "saveCanvasContent");
     },
 

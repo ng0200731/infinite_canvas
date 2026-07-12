@@ -57,6 +57,72 @@ export const sendCanvasEmailRequestSchema = z
 
 export type SendCanvasEmailRequest = z.infer<typeof sendCanvasEmailRequestSchema>;
 
+const canvasReportDetailSchema = z
+  .object({
+    label: z.string().trim().min(1).max(120),
+    value: z.string().trim().min(1).max(5_000),
+  })
+  .strict();
+
+const canvasReportImageSchema = z
+  .object({
+    url: z.string().trim().min(1).max(4_000_000).nullable(),
+    alt: z.string().trim().min(1).max(300),
+  })
+  .strict();
+
+const canvasReportBlockSchema = z
+  .object({
+    id: z.string().trim().min(1).max(180),
+    title: z.string().trim().min(1).max(300),
+    subtitle: z.string().trim().min(1).max(300).optional(),
+    details: z.array(canvasReportDetailSchema).max(80),
+    image: canvasReportImageSchema.nullable(),
+  })
+  .strict();
+
+const canvasReportStepSchema = z
+  .object({
+    id: z.string().trim().min(1).max(180),
+    title: z.string().trim().min(1).max(300),
+    detail: z.string().trim().min(1).max(10_000),
+  })
+  .strict();
+
+export const canvasReportPayloadSchema = z
+  .object({
+    title: z.string().trim().min(1).max(300),
+    generatedAt: z.iso.datetime(),
+    project: z
+      .object({
+        name: z.string().trim().min(1).max(300),
+        customerName: z.string().trim().min(1).max(300),
+        employeeName: z.string().trim().min(1).max(300),
+        employeeTitle: z.string().trim().max(300),
+        employeeEmail: z.string().trim().min(1).max(300),
+        employeeTel: z.string().trim().min(1).max(300),
+        currency: z.string().trim().min(1).max(120),
+        destination: z.string().trim().min(1).max(300),
+      })
+      .strict(),
+    sections: z
+      .array(
+        z
+          .object({
+            id: z.string().trim().min(1).max(120),
+            title: z.string().trim().min(1).max(180),
+            blocks: z.array(canvasReportBlockSchema).max(100),
+            pageBreakBefore: z.boolean().optional(),
+          })
+          .strict(),
+      )
+      .max(12),
+    steps: z.array(canvasReportStepSchema).max(500),
+  })
+  .strict();
+
+export type CanvasReportPayload = z.infer<typeof canvasReportPayloadSchema>;
+
 export const sendCanvasReportEmailRequestSchema = z
   .object({
     to: emailRecipientSchema,
@@ -65,6 +131,7 @@ export const sendCanvasReportEmailRequestSchema = z
     html: z.string().trim().min(1).max(250_000),
     text: z.string().trim().min(1).max(120_000),
     pdfFilename: z.string().trim().min(1).max(120),
+    report: canvasReportPayloadSchema.optional(),
   })
   .strict();
 

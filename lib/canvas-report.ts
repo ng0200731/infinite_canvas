@@ -27,6 +27,13 @@ export interface CanvasReportStep {
   detail: string;
 }
 
+export interface CanvasReportSection {
+  id: string;
+  title: string;
+  blocks: CanvasReportBlock[];
+  pageBreakBefore?: boolean;
+}
+
 export interface CanvasReport {
   title: string;
   generatedAt: string;
@@ -46,6 +53,7 @@ export interface CanvasReport {
   genericBlocks: CanvasReportBlock[];
   outputBlocks: CanvasReportBlock[];
   supplierBreakdowns: CanvasReportBlock[];
+  sections: CanvasReportSection[];
   steps: CanvasReportStep[];
   html: string;
   text: string;
@@ -93,6 +101,15 @@ function formatDateTime(value: string): string {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
+function labelFromKey(value: string): string {
+  return value
+    .replaceAll("_", " ")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^./, (first) => first.toUpperCase());
+}
+
 function primaryVariant(product: ProductRecord | null): ProductVariantRecord | null {
   return product?.variants[0] ?? null;
 }
@@ -106,7 +123,7 @@ function parameterDetails(variant: ProductVariantRecord | null) {
   if (!variant) return [];
   return Object.entries(variant.parameters)
     .filter(([, value]) => value.trim())
-    .map(([label, value]) => ({ label, value }));
+    .map(([label, value]) => ({ label: labelFromKey(label), value }));
 }
 
 function productDetails(product: ProductRecord, ownerName: string): CanvasReportBlock["details"] {
@@ -136,6 +153,80 @@ function linkedLabel(nodesById: Map<string, CanvasNode>, edge: CanvasEdge): stri
   const source = nodesById.get(edge.source);
   const target = nodesById.get(edge.target);
   return `${nodeTitle(source)} -> ${nodeTitle(target)}`;
+}
+
+function connectedNodeIds(edges: readonly CanvasEdge[], nodeId: string): string[] {
+  const ids = new Set<string>();
+  edges.forEach((edge) => {
+    if (edge.source === nodeId) ids.add(edge.target);
+    if (edge.target === nodeId) ids.add(edge.source);
+  });
+  return [...ids];
+}
+
+function findOutputForSource(
+  sourceNodeId: string,
+  nodesById: Map<string, CanvasNode>,
+  edges: readonly CanvasEdge[],
+): CanvasNode | null {
+  const queue = connectedNodeIds(edges, sourceNodeId);
+  const seen = new Set<string>([sourceNodeId]);
+
+  while (queue.length > 0) {
+    const nodeId = queue.shift();
+    if (!nodeId || seen.has(nodeId)) continue;
+    seen.add(nodeId);
+
+    const node = nodesById.get(nodeId);
+    if (!node) continue;
+    if (node.type === "imageOutput" && nullableString(asRecord(node.data).resultUrl)) return node;
+
+    if (
+      node.type === "generate" ||
+      node.type === "imageOutput" ||
+      node.type === "pantone" ||
+      node.type === "suppler" ||
+      node.type === "product" ||
+      node.type === "imageInput"
+    ) {
+      queue.push(...connectedNodeIds(edges, nodeId).filter((id) => !seen.has(id)));
+    }
+  }
+
+  return null;
+}
+
+function outputBlockForNode(node: CanvasNode): CanvasReportBlock {
+  const data = asRecord(node.data);
+  const prompt = stringValue(data.prompt);
+  return {
+    id: `output-${node.id}`,
+    title: node.type === "generate" ? "Input prompt" : "Output",
+    details: [
+      { label: "Node", value: nodeTitle(node) },
+      { label: "Input prompt", value: prompt },
+      { label: "Model", value: stringValue(data.model) },
+      { label: "Status", value: stringValue(data.status) },
+      { label: "Output format", value: stringValue(data.outputFormat) },
+    ].filter((item) => item.value),
+    image: nullableString(data.resultUrl)
+      ? {
+          url: nullableString(data.resultUrl),
+          alt: node.type === "generate" ? "Generated image" : "Output image",
+        }
+      : null,
+  };
+}
+
+function generatedImageForSupplier(
+  supplierNode: CanvasNode,
+  nodesById: Map<string, CanvasNode>,
+  edges: readonly CanvasEdge[],
+): CanvasReportImage | null {
+  const output = findOutputForSource(supplierNode.id, nodesById, edges);
+  if (!output) return null;
+  const resultUrl = nullableString(asRecord(output.data).resultUrl);
+  return resultUrl ? { url: resultUrl, alt: "Generated supplier output" } : null;
 }
 
 function nodeTitle(node: CanvasNode | undefined): string {
@@ -184,10 +275,18 @@ function makeHtml(report: Omit<CanvasReport, "html" | "text">): string {
     table{width:100%;border-collapse:collapse;font-size:12px} th{width:34%;text-align:left;color:#666;font-weight:600;vertical-align:top;padding:5px 8px 5px 0} td{padding:5px 0;vertical-align:top}
     .image{min-height:160px;background:#f1f1ef;border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden;color:#777;font-size:12px}
     img{max-width:100%;max-height:260px;object-fit:contain}
+    .page-break{break-before:page;border-top:1px solid #ddd;margin-top:32px;padding-top:8px}
     .steps{font-size:12px;margin:0;padding-left:20px}.steps li{margin-bottom:8px}
-    @media print{body{background:#fff}.page{padding:18mm}.block{page-break-inside:avoid}}
+    @media print{body{background:#fff}.page{padding:18mm}.block{page-break-inside:avoid}.page-break{page-break-before:always}}
   `;
   const project = report.project;
+  const sections = report.sections
+    .filter((section) => section.blocks.length > 0)
+    .map(
+      (section) =>
+        `<section${section.pageBreakBefore ? ' class="page-break"' : ""}><h2>${escapeHtml(section.title)}</h2>${section.blocks.map(blockHtml).join("")}</section>`,
+    )
+    .join("");
   return `<!doctype html><html><head><meta charset="utf-8"><style>${pageCss}</style></head><body><div class="page"><header><h1>${escapeHtml(report.title)}</h1><div class="meta">
     <span><strong>Customer:</strong> ${escapeHtml(project.customerName)}</span>
     <span><strong>Contact:</strong> ${escapeHtml([project.employeeName, project.employeeTitle].filter(Boolean).join(" / "))}</span>
@@ -197,12 +296,7 @@ function makeHtml(report: Omit<CanvasReport, "html" | "text">): string {
     <span><strong>Delivery destination:</strong> ${escapeHtml(project.destination)}</span>
     <span><strong>Generated:</strong> ${escapeHtml(formatDateTime(report.generatedAt))}</span>
   </div></header>
-  ${sectionHtml("Customer product list", report.customerProducts)}
-  ${sectionHtml("Supplier details", report.supplierBlocks)}
-  ${sectionHtml("Pantone", report.pantoneBlocks)}
-  ${sectionHtml("Generic node", report.genericBlocks)}
-  ${sectionHtml("Output and inputed prompt", report.outputBlocks)}
-  ${sectionHtml("Supplier breakdown", report.supplierBreakdowns)}
+  ${sections}
   <section><h2>Canvas log</h2><ol class="steps">${report.steps.map((step) => `<li><strong>${escapeHtml(step.title)}</strong><br>${lineBreaks(step.detail)}</li>`).join("")}</ol></section>
   </div></body></html>`;
 }
@@ -217,17 +311,10 @@ function makeText(report: Omit<CanvasReport, "html" | "text">): string {
     `Delivery destination: ${report.project.destination}`,
     "",
   ];
-  for (const section of [
-    ["Customer product list", report.customerProducts],
-    ["Supplier details", report.supplierBlocks],
-    ["Pantone", report.pantoneBlocks],
-    ["Generic node", report.genericBlocks],
-    ["Output and inputed prompt", report.outputBlocks],
-    ["Supplier breakdown", report.supplierBreakdowns],
-  ] as const) {
-    if (section[1].length === 0) continue;
-    lines.push(section[0]);
-    for (const block of section[1]) {
+  for (const section of report.sections) {
+    if (section.blocks.length === 0) continue;
+    lines.push(section.title);
+    for (const block of section.blocks) {
       lines.push(`- ${block.title}`);
       block.details.forEach((detail) => lines.push(`  ${detail.label}: ${detail.value}`));
       if (block.image?.url) lines.push(`  Image: ${block.image.url}`);
@@ -323,36 +410,49 @@ export function buildCanvasReport(input: BuildCanvasReportInput): CanvasReport {
     });
 
   const outputBlocks = nodes
-    .filter((node) => node.type === "imageOutput" || node.type === "generate")
-    .map((node) => {
-      const data = asRecord(node.data);
-      const prompt = stringValue(data.prompt);
-      return {
-        id: `output-${node.id}`,
-        title: node.type === "generate" ? "Inputed prompt" : "Output",
-        details: [
-          { label: "Node", value: nodeTitle(node) },
-          { label: "Prompt", value: prompt },
-          { label: "Model", value: stringValue(data.model) },
-          { label: "Status", value: stringValue(data.status) },
-          { label: "Output format", value: stringValue(data.outputFormat) },
-        ].filter((item) => item.value),
-        image: nullableString(data.resultUrl)
-          ? { url: nullableString(data.resultUrl), alt: node.type === "generate" ? "Generated image" : "Output image" }
-          : null,
-      };
-    });
+    .filter((node) => node.type === "imageOutput")
+    .map(outputBlockForNode)
+    .concat(
+      nodes
+        .filter((node) => node.type === "generate")
+        .filter((node) => !findOutputForSource(node.id, nodesById, content.edges))
+        .map(outputBlockForNode),
+    );
 
-  const supplierBreakdowns = supplierBlocks.map((block) => ({
-    ...block,
-    id: `breakdown-${block.id}`,
-    title: `${block.title} breakdown`,
-    details: block.details.filter((detail) =>
-      ["sampleLeadTime", "sampleCharge", "bulkLeadTime", "unitPrice", "Production cost", "sample lead time", "sample charge", "bulk lead time"].some(
-        (label) => detail.label.toLocaleLowerCase() === label.toLocaleLowerCase(),
-      ),
-    ),
-  }));
+  const breakdownLabels = new Set([
+    "Sample lead time",
+    "Sample charge",
+    "Sample cost",
+    "Production cost",
+    "Production lead time",
+    "Bulk lead time",
+    "Product lead time",
+    "Unit price",
+  ]);
+  const supplierBreakdowns = supplierBlocks.map((block, index) => {
+    const supplierNode = supplierNodes[index];
+    return {
+      id: `breakdown-${block.id}`,
+      title: `${block.title} breakdown`,
+      subtitle: block.subtitle,
+      details: block.details.filter((detail) => breakdownLabels.has(detail.label)),
+      image: supplierNode ? generatedImageForSupplier(supplierNode, nodesById, content.edges) : null,
+    };
+  });
+
+  const sections: CanvasReportSection[] = [
+    { id: "customer-products", title: "Product list", blocks: customerProducts },
+    { id: "supplier-details", title: "Supplier details", blocks: supplierBlocks },
+    { id: "pantone", title: "Pantone", blocks: pantoneBlocks },
+    { id: "generic-node", title: "Generic node", blocks: genericBlocks },
+    {
+      id: "output-prompt",
+      title: "Output and input prompt",
+      blocks: outputBlocks,
+      pageBreakBefore: true,
+    },
+    { id: "supplier-breakdown", title: "Supplier breakdown", blocks: supplierBreakdowns },
+  ];
 
   const steps: CanvasReportStep[] = [
     ...nodes.map((node, index) => ({
