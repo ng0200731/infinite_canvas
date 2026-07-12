@@ -124,15 +124,13 @@ describe("Xiangsu image generator", () => {
   });
 
   it("uses the native Gemini endpoint and parses its inline image", async () => {
-    const fetcher = vi
-      .fn<typeof fetch>()
-      .mockResolvedValue(
-        Response.json({
-          candidates: [
-            { content: { parts: [{ inlineData: { mimeType: "image/png", data: "aW1hZ2U=" } }] } },
-          ],
-        }),
-      );
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        candidates: [
+          { content: { parts: [{ inlineData: { mimeType: "image/png", data: "aW1hZ2U=" } }] } },
+        ],
+      }),
+    );
     const generate = createXiangsuImageGenerator({ apiKey: "secret", fetcher });
 
     await expect(
@@ -207,6 +205,17 @@ describe("Xiangsu image generator", () => {
     await expect(createXiangsuImageGenerator({ apiKey: undefined })(input)).rejects.toThrow(
       "XIANGSU_API_KEY",
     );
+  });
+
+  it("maps raw fetch failures to a clearer provider connection error", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockRejectedValue(new TypeError("fetch failed"));
+
+    await expect(
+      createXiangsuImageGenerator({ apiKey: "secret", fetcher })({
+        ...input,
+        model: "gemini-3-pro-image-preview",
+      }),
+    ).rejects.toThrow("provider connection failed");
   });
 
   it("times out aborted provider requests", async () => {

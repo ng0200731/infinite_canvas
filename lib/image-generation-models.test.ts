@@ -7,6 +7,7 @@ import {
   MODEL_CATALOG_GROUPS,
   aspectRatioForImageGenerationSize,
   geminiImageSizeForResolution,
+  getModelDisplayName,
   normalizeImageGenerationOutputFormat,
   normalizeImageGenerationResolution,
   normalizeImageGenerationSize,
@@ -15,19 +16,32 @@ import {
 } from "@/lib/image-generation-models";
 
 describe("image generation model catalog", () => {
-  it("enables every provider-supported image model", () => {
+  it("keeps only currently available image models enabled", () => {
     expect(DEFAULT_IMAGE_GENERATION_MODEL).toBe("gpt-image-2");
     expect(
       IMAGE_GENERATION_MODEL_IDS.filter(
         (id) => MODEL_CATALOG.find((entry) => entry.id === id)?.enabled,
       ),
-    ).toEqual(IMAGE_GENERATION_MODEL_IDS);
+    ).toEqual([
+      "gpt-image-2",
+      "gpt-image-1.5",
+      "gpt-image-1",
+      "dall-e-3",
+      "dall-e-2",
+      "gemini-3-pro-image-preview",
+      "gemini-3-pro-image-preview-2K",
+      "gemini-3-pro-image-preview-4K",
+      "gemini-3.1-flash-image-preview",
+      "gemini-3.1-flash-image-preview-2K",
+      "gemini-3.1-flash-image-preview-4K",
+    ]);
   });
 
-  it("shows text and video aliases but disables them", () => {
+  it("shows disabled entries for unavailable image, text, and video models", () => {
     const disabledEntries = MODEL_CATALOG.filter((entry) => !entry.enabled);
     expect(disabledEntries.length).toBeGreaterThan(0);
-    expect(disabledEntries.every((entry) => entry.capability !== "image")).toBe(true);
+    expect(disabledEntries.some((entry) => entry.id === "gemini-2.5-flash-image")).toBe(true);
+    expect(disabledEntries.some((entry) => entry.id === "gpt-image-1-mini")).toBe(true);
     expect(disabledEntries.some((entry) => entry.aliases.includes("GPT5 Standard"))).toBe(true);
     expect(disabledEntries.some((entry) => entry.aliases.includes("DeepSeek Flash"))).toBe(true);
     expect(disabledEntries.some((entry) => entry.aliases.includes("Seedance 2"))).toBe(true);
@@ -48,6 +62,13 @@ describe("image generation model catalog", () => {
       "DALL-E 3",
       "GPT Image V2",
     ]);
+  });
+
+  it("provides friendly model names for canvas and history UI", () => {
+    expect(getModelDisplayName("gemini-3.1-flash-image-preview")).toBe("Nano Banana 2");
+    expect(getModelDisplayName("gemini-3-pro-image-preview-4K")).toBe("Nano Banana Pro");
+    expect(getModelDisplayName("legacy-model")).toBe("legacy-model");
+    expect(getModelDisplayName(null)).toBeNull();
   });
 
   it("normalizes legacy and unknown models to gpt-image-2", () => {

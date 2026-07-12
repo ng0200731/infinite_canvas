@@ -14,6 +14,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { getModelDisplayName } from "@/lib/image-generation-models";
 import { getCanvasStore, type ImageRecord } from "@/lib/store";
 
 interface RenderGalleryDialogProps {
@@ -32,9 +33,19 @@ function downloadImage(image: ImageRecord) {
 
 function modelSummary(image: ImageRecord): string {
   const details = image.modelDetails;
-  return [details?.model ?? image.model, details?.size, details?.resolution, details?.outputFormat]
+  const model = details?.model ?? image.model;
+  return [getModelDisplayName(model), details?.size, details?.resolution, details?.outputFormat]
     .filter((value): value is string => Boolean(value))
     .join(" / ");
+}
+
+function creationDateTime(createdAt: string): string {
+  const date = new Date(createdAt);
+  if (Number.isNaN(date.getTime())) return createdAt;
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
 }
 
 export function RenderGalleryDialog({ canvasId }: RenderGalleryDialogProps) {
@@ -127,13 +138,19 @@ export function RenderGalleryDialog({ canvasId }: RenderGalleryDialogProps) {
                       <Download />
                     </Button>
                   </div>
-                  <div className="flex min-h-28 flex-col gap-2 p-3">
+                  <div className="flex min-h-32 flex-col gap-2 p-3">
                     <p className="text-foreground line-clamp-3 text-xs leading-5">
                       {image.prompt ?? "No prompt saved"}
                     </p>
-                    <p className="text-muted-foreground mt-auto truncate font-mono text-[0.68rem]">
+                    <p className="text-muted-foreground mt-auto truncate text-[0.7rem] font-medium">
                       {modelSummary(image) || "No model details"}
                     </p>
+                    <time
+                      dateTime={image.createdAt}
+                      className="text-muted-foreground text-[0.68rem] tabular-nums"
+                    >
+                      {creationDateTime(image.createdAt)}
+                    </time>
                   </div>
                 </article>
               ))}

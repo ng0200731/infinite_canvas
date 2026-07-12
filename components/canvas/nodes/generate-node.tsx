@@ -144,14 +144,24 @@ const GEMINI_VERSION_OPTIONS: readonly {
   enabled: boolean;
   disabledReason?: string;
 }[] = [
-  { label: "Pro", value: "pro", description: "NanoBanana Pro", enabled: true },
-  { label: "2", value: "2", description: "NanoBanana 2", enabled: true },
   {
-    label: "1",
+    label: "Nano Banana Pro",
+    value: "pro",
+    description: "gemini-3-pro-image-preview",
+    enabled: true,
+  },
+  {
+    label: "Nano Banana 2",
+    value: "2",
+    description: "gemini-3.1-flash-image-preview",
+    enabled: true,
+  },
+  {
+    label: "Nano Banana 1",
     value: "1",
     description: "NanoBanana 1",
     enabled: false,
-    disabledReason: "Unavailable on Xiangsu currently",
+    disabledReason: "gemini-2.5-flash-image · unavailable on Xiangsu currently",
   },
 ];
 
@@ -401,9 +411,10 @@ export function GenerateNode({ id, data, parentId, selected }: NodeProps<Generat
   const activeMentionSuggestion =
     mentionSuggestions[activeSuggestionIndex] ?? firstMentionSuggestion;
   const selectedGptOption = GPT_MODEL_OPTIONS.find((option) => option.model === model);
-  const currentModelUnavailable = provider === "gpt"
-    ? Boolean(selectedGptOption && !selectedGptOption.enabled)
-    : geminiVersion === "1";
+  const currentModelUnavailable =
+    provider === "gpt"
+      ? Boolean(selectedGptOption && !selectedGptOption.enabled)
+      : geminiVersion === "1";
   const currentModelBlockedByReferences =
     provider === "gpt" &&
     Boolean(selectedGptOption?.status === "legacy" && hasGenerationReferences);
@@ -727,13 +738,17 @@ export function GenerateNode({ id, data, parentId, selected }: NodeProps<Generat
                   <SelectGroup>
                     <SelectLabel>Latest first</SelectLabel>
                     {GEMINI_VERSION_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value} disabled={!option.enabled}>
+                      <SelectItem
+                        key={option.value}
+                        value={option.value}
+                        disabled={!option.enabled}
+                      >
                         <span className="flex flex-col items-start">
                           <span>{option.label}</span>
                           <span className="text-muted-foreground text-[0.65rem]">
                             {option.enabled
                               ? option.description
-                              : option.disabledReason ?? option.description}
+                              : (option.disabledReason ?? option.description)}
                           </span>
                         </span>
                       </SelectItem>
@@ -766,7 +781,7 @@ export function GenerateNode({ id, data, parentId, selected }: NodeProps<Generat
                             <span className="text-muted-foreground text-[0.65rem]">
                               {option.enabled
                                 ? option.description
-                                : option.disabledReason ?? option.description}
+                                : (option.disabledReason ?? option.description)}
                             </span>
                           </span>
                         </SelectItem>
@@ -1095,8 +1110,8 @@ export function GenerateNode({ id, data, parentId, selected }: NodeProps<Generat
         )}
         {provider === "gpt" && selectedGptOption && !selectedGptOption.enabled && (
           <p className="text-xs text-amber-700 dark:text-amber-400">
-            {selectedGptOption.label} is currently unavailable on Xiangsu. Use GPT Image 2, 1.5
-            Pro, or 1.
+            {selectedGptOption.label} is currently unavailable on Xiangsu. Use GPT Image 2, 1.5 Pro,
+            or 1.
           </p>
         )}
         {provider === "gpt" && currentModelBlockedByReferences && (

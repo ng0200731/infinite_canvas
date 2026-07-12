@@ -129,7 +129,7 @@ export const MODEL_CATALOG_GROUPS: readonly ModelCatalogGroup[] = [
         aliases: ["Banana 1", "Nano Banana 1"],
         family: "gemini-image",
         capability: "image",
-        enabled: true,
+        enabled: false,
       },
       {
         id: "gemini-3-pro-image-preview",
@@ -215,7 +215,7 @@ export const MODEL_CATALOG_GROUPS: readonly ModelCatalogGroup[] = [
         aliases: ["GPT Image Economy"],
         family: "gpt-image",
         capability: "image",
-        enabled: true,
+        enabled: false,
       },
       {
         id: "dall-e-3",
@@ -417,4 +417,10 @@ export function getModelCatalogEntry(model: ImageGenerationModelId): ModelCatalo
   const entry = MODEL_CATALOG.find((candidate) => candidate.id === model);
   if (!entry) throw new Error(`Missing model catalog entry for ${model}.`);
   return entry;
+}
+
+export function getModelDisplayName(model: string | null | undefined): string | null {
+  if (!model) return null;
+  const entry = MODEL_CATALOG.find((candidate) => candidate.id === model);
+  return entry?.aliases.at(-1) ?? model;
 }

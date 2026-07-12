@@ -57,13 +57,13 @@ export function LoginForm({ redirectTo = "/projects" }: { redirectTo?: string })
           required
           autoComplete="current-password"
           className="h-10"
-          placeholder="••••••••"
+          placeholder="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
       </div>
       <Button type="submit" disabled={loading} className="h-10 w-full">
-        {loading ? "Signing in…" : "Sign in"}
+        {loading ? "Signing in..." : "Sign in"}
       </Button>
     </form>
   );
