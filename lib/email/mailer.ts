@@ -165,6 +165,13 @@ function withLineBreaks(value: string): string {
   return escapeHtml(value).replaceAll("\n", "<br>");
 }
 
+function sanitizeReportHtmlForEmail(html: string): string {
+  return html.replace(
+    /<img\b([^>]*?)\bsrc=(["'])data:image\/[^"']+\2([^>]*)>/gi,
+    '<span class="email-image-note">Image included in the attached PDF.</span>',
+  );
+}
+
 function parseDataImage(value: string): z.infer<typeof dataImageSchema> | null {
   const match = /^data:(image\/(?:png|jpeg|webp|gif));base64,(.+)$/.exec(value);
   if (!match) return null;
@@ -239,12 +246,10 @@ export function prepareTestMail(): PreparedMail {
 }
 
 export function prepareCanvasReportHtmlOnlyMail(input: SendCanvasReportEmailRequest): PreparedMail {
-  const diagnosticNote =
-    "Diagnostic email 1 of 2: this message is HTML/text only and has no PDF attachment.";
   return {
-    subject: `${input.subject} (HTML only)`,
-    text: `${input.text}\n\n${diagnosticNote}`,
-    html: `${input.html}<p>${escapeHtml(diagnosticNote)}</p>`,
+    subject: input.subject,
+    text: input.text,
+    html: input.html,
     attachments: [],
   };
 }
@@ -261,10 +266,11 @@ export async function prepareCanvasReportMail(
       text: input.text,
       report: input.report,
     });
+    const emailHtml = sanitizeReportHtmlForEmail(input.html);
     return {
-      subject: `${input.subject} (PDF attached)`,
+      subject: input.subject,
       text: input.text,
-      html: input.html,
+      html: emailHtml,
       attachments: [
         {
           filename: input.pdfFilename,
@@ -286,7 +292,7 @@ export async function prepareCanvasReportMail(
   return {
     subject: input.subject,
     text: `${input.text}\n\n${fallbackNote}`,
-    html: `${input.html}<p>${escapeHtml(fallbackNote)}</p>`,
+    html: `${sanitizeReportHtmlForEmail(input.html)}<p>${escapeHtml(fallbackNote)}</p>`,
     attachments: [],
   };
 }
@@ -346,9 +352,7 @@ export async function deliverCanvasEmail(input: SendCanvasEmailRequest) {
 
 export async function deliverCanvasReportEmail(input: SendCanvasReportEmailRequest) {
   const parsed = sendCanvasReportEmailRequestSchema.parse(input);
-  const deliver = delivery();
-  await deliver(parsed.to, prepareCanvasReportHtmlOnlyMail(parsed));
-  return deliver(
+  return delivery()(
     parsed.to,
     await prepareCanvasReportMail(parsed, renderCanvasReportPdf, { requirePdf: true }),
   );

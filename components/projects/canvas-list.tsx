@@ -74,16 +74,21 @@ function SendCanvasDialog({
       toast.error(parsedRecipient.error.issues[0]?.message ?? "Enter a valid recipient email.");
       return;
     }
+    if (selectedImageIds.length === 0) {
+      toast.error("Please select at least one render image before sending the canvas report.");
+      return;
+    }
 
     setSending(true);
     try {
+      const selectedImages = images.filter((image) => selectedImageIds.includes(image.id));
       const report = buildCanvasReport({
         canvas: loadedCanvas ?? canvas,
         project,
         customers: customers.data ?? [],
         suppliers: suppliers.data ?? [],
         products: products.data ?? [],
-        images,
+        images: selectedImages,
       });
       const filename = canvas.name.replace(/[^a-z0-9-]+/gi, "-").replace(/^-|-$/g, "") || "canvas";
       const result = await sendCanvasReportEmail({

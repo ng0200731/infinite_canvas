@@ -4,8 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createEmailDelivery,
   prepareCanvasMail,
-  prepareCanvasReportHtmlOnlyMail,
   prepareCanvasReportMail,
+  prepareCanvasReportHtmlOnlyMail,
   type MailTransportFactory,
   type SmtpProviderConfig,
 } from "@/lib/email/mailer";
@@ -162,7 +162,31 @@ describe("SMTP email delivery", () => {
     errorSpy.mockRestore();
   });
 
-  it("prepares a separate HTML-only diagnostic report email", () => {
+  it("prepares one report email with HTML body and PDF attachment", async () => {
+    const prepared = await prepareCanvasReportMail(
+      {
+        to: "recipient@example.com",
+        canvasName: "Campaign board",
+        subject: "Campaign board canvas report",
+        html: '<p>Report body</p><img src="data:image/png;base64,aW1hZ2U=" alt="render">',
+        text: "Report body",
+        pdfFilename: "campaign-board-report.pdf",
+      },
+      async () => Buffer.from("%PDF-test"),
+    );
+
+    expect(prepared.subject).toBe("Campaign board canvas report");
+    expect(prepared.html).toContain("<p>Report body</p>");
+    expect(prepared.html).not.toContain("data:image/png;base64");
+    expect(prepared.html).toContain("Image included in the attached PDF.");
+    expect(prepared.attachments).toHaveLength(1);
+    expect(prepared.attachments[0]).toMatchObject({
+      filename: "campaign-board-report.pdf",
+      contentType: "application/pdf",
+    });
+  });
+
+  it("prepares a pure HTML report email without PDF attachment", () => {
     const prepared = prepareCanvasReportHtmlOnlyMail({
       to: "recipient@example.com",
       canvasName: "Campaign board",
@@ -172,9 +196,10 @@ describe("SMTP email delivery", () => {
       pdfFilename: "campaign-board-report.pdf",
     });
 
-    expect(prepared.subject).toBe("Campaign board canvas report (HTML only)");
+    expect(prepared.subject).toBe("Campaign board canvas report");
     expect(prepared.attachments).toEqual([]);
-    expect(prepared.text).toContain("Diagnostic email 1 of 2");
+    expect(prepared.text).toBe("Report body");
+    expect(prepared.html).toBe("<p>Report body</p>");
   });
 
   it("can require the PDF attachment for the second diagnostic report email", async () => {

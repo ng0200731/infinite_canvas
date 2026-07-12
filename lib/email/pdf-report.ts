@@ -19,13 +19,64 @@ const HEADER_HEIGHT = 54;
 const FOOTER_HEIGHT = 24;
 const BLOCK_GAP = 14;
 
-function isDataImageUrl(value: string): boolean {
-  return /^data:image\/(?:png|jpeg);base64,/i.test(value);
+type SupportedPdfImageMime = "image/png" | "image/jpeg";
+
+function supportedMimeFromBuffer(buffer: Buffer): SupportedPdfImageMime | null {
+  if (
+    buffer.length >= 8 &&
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47 &&
+    buffer[4] === 0x0d &&
+    buffer[5] === 0x0a &&
+    buffer[6] === 0x1a &&
+    buffer[7] === 0x0a
+  ) {
+    return "image/png";
+  }
+
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return "image/jpeg";
+  }
+
+  return null;
 }
 
-function imageBufferFromDataUrl(value: string): Buffer | null {
-  const match = /^data:image\/(?:png|jpeg);base64,(.+)$/i.exec(value);
-  return match ? Buffer.from(match[1], "base64") : null;
+function supportedMimeFromType(value: string): SupportedPdfImageMime | null {
+  const mime = value.split(";")[0]?.trim().toLocaleLowerCase();
+  if (mime === "image/png") return "image/png";
+  if (mime === "image/jpeg" || mime === "image/jpg") return "image/jpeg";
+  return null;
+}
+
+function isDataImageUrl(value: string): boolean {
+  return /^data:image\/[-+.\w]+;base64,/i.test(value);
+}
+
+async function convertToPdfImageBuffer(buffer: Buffer): Promise<Buffer | null> {
+  if (supportedMimeFromBuffer(buffer)) return buffer;
+
+  try {
+    const sharpModule = await import("sharp");
+    return await sharpModule.default(buffer).png().toBuffer();
+  } catch (error) {
+    console.warn("Canvas report PDF image conversion failed.", {
+      errorName: error instanceof Error ? error.name : "UnknownError",
+      errorMessage: error instanceof Error ? error.message : "Unknown error",
+    });
+    return null;
+  }
+}
+
+async function imageBufferFromDataUrl(value: string): Promise<Buffer | null> {
+  const match = /^data:(image\/[-+.\w]+);base64,(.+)$/i.exec(value);
+  if (!match) return null;
+
+  const buffer = Buffer.from(match[2] ?? "", "base64");
+  if (supportedMimeFromType(match[1] ?? "") || supportedMimeFromBuffer(buffer)) return buffer;
+
+  return convertToPdfImageBuffer(buffer);
 }
 
 async function imageBufferFromUrl(value: string): Promise<Buffer | null> {
@@ -45,8 +96,9 @@ async function imageBufferFromUrl(value: string): Promise<Buffer | null> {
     const response = await fetch(parsed, { signal: controller.signal });
     if (!response.ok) return null;
     const contentType = response.headers.get("content-type") ?? "";
-    if (!/^image\/(?:png|jpeg|jpg)$/i.test(contentType)) return null;
-    return Buffer.from(await response.arrayBuffer());
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (supportedMimeFromType(contentType) || supportedMimeFromBuffer(buffer)) return buffer;
+    return convertToPdfImageBuffer(buffer);
   } catch {
     return null;
   } finally {
@@ -62,6 +114,10 @@ async function collectImageBuffers(report: CanvasReportPayload): Promise<Map<str
   const buffers = await Promise.all(
     entries.map(async ([id, url]) => [id, await imageBufferFromUrl(url)] as const),
   );
+  buffers.forEach(([id, buffer]) => {
+    if (buffer) return;
+    console.warn("Canvas report PDF image could not be embedded.", { blockId: id });
+  });
 
   return new Map(
     buffers.filter((entry): entry is readonly [string, Buffer] => entry[1] instanceof Buffer),
@@ -155,6 +211,69 @@ function drawDetails(
   return cursorY;
 }
 
+function tableHeight(
+  table: NonNullable<CanvasReportPayload["sections"][number]["blocks"][number]["table"]>,
+): number {
+  return 24 + table.rows.length * 26;
+}
+
+function drawSupplierMatrix(
+  doc: PDFKit.PDFDocument,
+  table: NonNullable<CanvasReportPayload["sections"][number]["blocks"][number]["table"]>,
+  x: number,
+  y: number,
+  width: number,
+): number {
+  const columns = ["Item", ...table.columns, "Total"];
+  const rowHeight = 26;
+  const headerHeight = 24;
+  const firstColumnWidth = 86;
+  const remainingWidth = width - firstColumnWidth;
+  const otherColumnWidth = remainingWidth / Math.max(1, columns.length - 1);
+  const columnWidths = columns.map((_, index) =>
+    index === 0 ? firstColumnWidth : otherColumnWidth,
+  );
+  let cursorX = x;
+
+  doc.font("Helvetica-Bold").fontSize(7).fillColor("#111111");
+  columns.forEach((column, index) => {
+    const columnWidth = columnWidths[index] ?? otherColumnWidth;
+    doc.rect(cursorX, y, columnWidth, headerHeight).fillAndStroke("#f5ead0", "#decda6");
+    doc.fillColor("#111111").text(column, cursorX + 4, y + 7, {
+      width: columnWidth - 8,
+      height: headerHeight - 8,
+      ellipsis: true,
+    });
+    cursorX += columnWidth;
+  });
+
+  table.rows.forEach((row, rowIndex) => {
+    const rowY = y + headerHeight + rowIndex * rowHeight;
+    const values = [row.label, ...row.values, row.total];
+    cursorX = x;
+    values.forEach((value, columnIndex) => {
+      const columnWidth = columnWidths[columnIndex] ?? otherColumnWidth;
+      const isHeaderColumn = columnIndex === 0;
+      const isTotalColumn = columnIndex === values.length - 1;
+      const fill = isHeaderColumn ? "#fff8ea" : isTotalColumn ? "#fff4d8" : "#ffffff";
+      doc.rect(cursorX, rowY, columnWidth, rowHeight).fillAndStroke(fill, "#eadfca");
+      doc
+        .font(isHeaderColumn || isTotalColumn ? "Helvetica-Bold" : "Helvetica")
+        .fontSize(7)
+        .fillColor("#111111")
+        .text(value, cursorX + 4, rowY + 6, {
+          width: columnWidth - 8,
+          height: rowHeight - 8,
+          ellipsis: true,
+        });
+      cursorX += columnWidth;
+    });
+  });
+
+  doc.fillColor("#111111");
+  return y + tableHeight(table) + 8;
+}
+
 function drawImage(
   doc: PDFKit.PDFDocument,
   buffer: Buffer | undefined,
@@ -200,9 +319,9 @@ function drawBlock(
   const detailHeight = block.details.reduce(
     (height, detail) =>
       height + Math.max(16, doc.heightOfString(detail.value, { width: detailsWidth - 120 }) + 4),
-    38,
+    38 + (block.table ? tableHeight(block.table) + 8 : 0),
   );
-  const blockHeight = Math.max(170, Math.min(320, detailHeight + 18));
+  const blockHeight = Math.max(170, Math.min(520, detailHeight + 18));
 
   ensureSpace(doc, blockHeight + BLOCK_GAP, report);
   const top = doc.y;
@@ -215,7 +334,11 @@ function drawBlock(
     doc.text(block.subtitle, PAGE_MARGIN + 12, top + 28, { width: detailsWidth });
   }
 
-  drawDetails(doc, block.details, PAGE_MARGIN + 12, top + (block.subtitle ? 46 : 34), detailsWidth);
+  const detailTop = top + (block.subtitle ? 46 : 34);
+  const afterTable = block.table
+    ? drawSupplierMatrix(doc, block.table, PAGE_MARGIN + 12, detailTop, detailsWidth)
+    : detailTop;
+  drawDetails(doc, block.details, PAGE_MARGIN + 12, afterTable, detailsWidth);
   drawImage(
     doc,
     images.get(block.id),

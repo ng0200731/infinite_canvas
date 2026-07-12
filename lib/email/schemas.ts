@@ -71,12 +71,30 @@ const canvasReportImageSchema = z
   })
   .strict();
 
+const canvasReportTableSchema = z
+  .object({
+    columns: z.array(z.string().trim().min(1).max(120)).max(20),
+    rows: z
+      .array(
+        z
+          .object({
+            label: z.string().trim().min(1).max(120),
+            values: z.array(z.string().trim().min(1).max(1_000)).max(20),
+            total: z.string().trim().min(1).max(1_000),
+          })
+          .strict(),
+      )
+      .max(20),
+  })
+  .strict();
+
 const canvasReportBlockSchema = z
   .object({
     id: z.string().trim().min(1).max(180),
     title: z.string().trim().min(1).max(300),
     subtitle: z.string().trim().min(1).max(300).optional(),
     details: z.array(canvasReportDetailSchema).max(80),
+    table: canvasReportTableSchema.optional(),
     image: canvasReportImageSchema.nullable(),
   })
   .strict();

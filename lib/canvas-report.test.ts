@@ -5,6 +5,8 @@ import type { Canvas, ImageRecord, Project } from "@/lib/store";
 import type { ProductRecord, SupplierRecord } from "@/lib/workspace-records";
 
 const now = "2026-07-13T00:00:00.000Z";
+const tinyPng =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
 
 const project: Project = {
   id: "project-1",
@@ -88,7 +90,7 @@ const products: ProductRecord[] = [
         priceUnit: "per pc",
         image: {
           name: "shirt.png",
-          url: "data:image/png;base64,aW1hZ2U=",
+          url: tinyPng,
           storagePath: null,
         },
       },
@@ -114,13 +116,14 @@ const products: ProductRecord[] = [
         parameters: {
           sampleLeadTime: "7 days",
           sampleCharge: "USD 45",
+          bulkLeadTime: "18 days",
           productionLeadTime: "18 days",
         },
         unitPrice: "0.18",
         priceUnit: "per pc",
         image: {
           name: "label.png",
-          url: "data:image/png;base64,aW1hZ2U=",
+          url: tinyPng,
           storagePath: null,
         },
       },
@@ -152,7 +155,7 @@ const products: ProductRecord[] = [
         priceUnit: "per meter",
         image: {
           name: "elastic.png",
-          url: "data:image/png;base64,aW1hZ2U=",
+          url: tinyPng,
           storagePath: null,
         },
       },
@@ -181,7 +184,7 @@ const canvas: Canvas = {
           productId: "customer-product-1",
           productSubject: "SH-001",
           variantId: "customer-variant-1",
-          variantImageUrl: "data:image/png;base64,aW1hZ2U=",
+          variantImageUrl: tinyPng,
           variantImageName: "shirt.png",
         },
       },
@@ -196,7 +199,7 @@ const canvas: Canvas = {
           productId: "supplier-product-1",
           productSubject: "WL-101",
           variantId: "supplier-variant-1",
-          variantImageUrl: "data:image/png;base64,aW1hZ2U=",
+          variantImageUrl: tinyPng,
           variantImageName: "label.png",
         },
       },
@@ -211,7 +214,7 @@ const canvas: Canvas = {
           productId: "supplier-product-2",
           productSubject: "EL-202",
           variantId: "supplier-variant-2",
-          variantImageUrl: "data:image/png;base64,aW1hZ2U=",
+          variantImageUrl: tinyPng,
           variantImageName: "elastic.png",
         },
       },
@@ -223,7 +226,7 @@ const canvas: Canvas = {
           prompt: "Generate label mockup from @supplier",
           model: "gpt-image-2",
           status: "done",
-          resultUrl: "data:image/png;base64,aW1hZ2U=",
+          resultUrl: tinyPng,
         },
       },
       {
@@ -234,7 +237,7 @@ const canvas: Canvas = {
           prompt: "Generate label mockup from @supplier",
           model: "gpt-image-2",
           status: "done",
-          resultUrl: "data:image/png;base64,aW1hZ2U=",
+          resultUrl: tinyPng,
         },
       },
     ],
@@ -260,12 +263,12 @@ describe("buildCanvasReport", () => {
     });
 
     expect(report.sections.map((section) => section.title)).toEqual([
-      "Product list",
+      "Supplier breakdown",
       "Supplier details",
+      "Output and input prompt",
+      "Product list",
       "Pantone",
       "Generic node",
-      "Output and input prompt",
-      "Supplier breakdown",
     ]);
     expect(report.project.customerName).toBe("Harborline Retail Ltd.");
     expect(report.outputBlocks).toHaveLength(1);
@@ -279,6 +282,39 @@ describe("buildCanvasReport", () => {
       value: "Bright Sample Factory: USD 45 + Elastic Works: USD 25 = USD 70",
     });
     expect(report.supplierBreakdowns[0]?.details).toContainEqual({
+      label: "Total sample lead time",
+      value: "Bright Sample Factory: 7 days + Elastic Works: 5 days = 7 days",
+    });
+    expect(report.supplierBreakdowns[0]?.details).toContainEqual({
+      label: "Total bulk lead time",
+      value: "Bright Sample Factory: 18 days + Elastic Works: 20 days = 20 days",
+    });
+    expect(report.supplierBreakdowns[0]?.table).toEqual({
+      columns: ["Bright Sample Factory", "Elastic Works"],
+      rows: [
+        {
+          label: "Sample cost",
+          values: ["USD 45", "USD 25"],
+          total: "USD 70",
+        },
+        {
+          label: "Sample lead time",
+          values: ["7 days", "5 days"],
+          total: "7 days",
+        },
+        {
+          label: "Bulk cost",
+          values: ["0.18 per pc", "0.42 per meter"],
+          total: "0.60 mixed units",
+        },
+        {
+          label: "Bulk lead time",
+          values: ["18 days", "20 days"],
+          total: "20 days",
+        },
+      ],
+    });
+    expect(report.supplierBreakdowns[0]?.details).toContainEqual({
       label: "Bright Sample Factory - Production cost",
       value: "0.18 per pc",
     });
@@ -286,8 +322,67 @@ describe("buildCanvasReport", () => {
       label: "Elastic Works - Bulk Lead Time",
       value: "20 days",
     });
-    expect(report.supplierBreakdowns[0]?.image?.url).toBe("data:image/png;base64,aW1hZ2U=");
+    expect(report.supplierBreakdowns[0]?.image?.url).toBe(tinyPng);
     expect(report.html.match(/Supplier details/g)).toHaveLength(1);
+    expect(report.html.indexOf("Supplier breakdown")).toBeLessThan(
+      report.html.indexOf("Supplier details"),
+    );
+    expect(report.html.indexOf("Supplier details")).toBeLessThan(
+      report.html.indexOf("Output and input prompt"),
+    );
+    expect(report.html).toContain('class="breakdown-table"');
+    expect(report.html).toContain('class="supplier-matrix"');
+    expect(report.html).toContain('class="total-row"');
     expect(report.html).toContain("Output and input prompt");
+  });
+
+  it("uses the selected render image as the report image when the canvas output has no image", () => {
+    const canvasWithoutOutputImage: Canvas = {
+      ...canvas,
+      content: {
+        ...canvas.content,
+        nodes: canvas.content.nodes.map((node) =>
+          node.id === "output-node" || node.id === "generate-node"
+            ? {
+                ...node,
+                data: {
+                  ...node.data,
+                  resultUrl: null,
+                },
+              }
+            : node,
+        ),
+      },
+    };
+    const report = buildCanvasReport({
+      canvas: canvasWithoutOutputImage,
+      project,
+      customers: [],
+      suppliers,
+      products,
+      images: [
+        {
+          id: "selected-render",
+          canvasId: "canvas-1",
+          source: "generated",
+          url: tinyPng,
+          storagePath: null,
+          prompt: "Selected final render",
+          model: "gpt-image-2",
+          modelDetails: {
+            model: "gpt-image-2",
+            size: null,
+            resolution: null,
+            outputFormat: "png",
+          },
+          createdAt: now,
+        },
+      ],
+    });
+
+    expect(report.supplierBreakdowns[0]?.image).toEqual({
+      url: tinyPng,
+      alt: "Selected final render",
+    });
   });
 });

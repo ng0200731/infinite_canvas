@@ -13,11 +13,21 @@ export interface CanvasReportImage {
   alt: string;
 }
 
+export interface CanvasReportTable {
+  columns: string[];
+  rows: Array<{
+    label: string;
+    values: string[];
+    total: string;
+  }>;
+}
+
 export interface CanvasReportBlock {
   id: string;
   title: string;
   subtitle?: string;
   details: Array<{ label: string; value: string }>;
+  table?: CanvasReportTable;
   image: CanvasReportImage | null;
 }
 
@@ -222,17 +232,161 @@ function finalOutputImage(outputBlocks: readonly CanvasReportBlock[]): CanvasRep
   return [...outputBlocks].reverse().find((block) => block.image?.url)?.image ?? null;
 }
 
-function parseCurrencyAmount(value: string): { prefix: string; amount: number } | null {
-  const match = /^\s*([^\d.-]*)\s*(-?\d+(?:\.\d+)?)/.exec(value);
+function selectedRenderImage(images: readonly ImageRecord[]): CanvasReportImage | null {
+  const image = [...images].reverse().find((candidate) => candidate.url.trim());
+  if (!image) return null;
+  return {
+    url: image.url,
+    alt: image.prompt || "Selected render image",
+  };
+}
+
+function parseQuantityAmount(value: string): {
+  prefix: string;
+  amount: number;
+  suffix: string;
+} | null {
+  const match = /^\s*([^\d.-]*)\s*(-?\d+(?:\.\d+)?)\s*(.*?)\s*$/.exec(value);
   if (!match) return null;
   const amount = Number(match[2]);
   if (!Number.isFinite(amount)) return null;
-  return { prefix: match[1]?.trim() ?? "", amount };
+  return {
+    prefix: match[1]?.trim() ?? "",
+    amount,
+    suffix: match[3]?.trim() ?? "",
+  };
 }
 
-function formatCurrencyAmount(prefix: string, amount: number): string {
+function formatQuantityAmount(prefix: string, amount: number, suffix: string): string {
   const formatted = Number.isInteger(amount) ? String(amount) : amount.toFixed(2);
-  return prefix ? `${prefix} ${formatted}` : formatted;
+  return [prefix, formatted, suffix].filter(Boolean).join(" ");
+}
+
+function totalBreakdownDetail(
+  supplierBlocks: readonly CanvasReportBlock[],
+  sourceLabel: string,
+  totalLabel: string,
+  mode: "sum" | "max",
+): { label: string; value: string } | null {
+  const parts = supplierBlocks
+    .map((block) => {
+      const value =
+        block.details.find((detail) => detail.label.toLocaleLowerCase() === sourceLabel)?.value ??
+        "";
+      const parsed = parseQuantityAmount(value);
+      return parsed ? { ...parsed, supplierName: block.title } : null;
+    })
+    .filter(
+      (
+        part,
+      ): part is {
+        prefix: string;
+        amount: number;
+        suffix: string;
+        supplierName: string;
+      } => part !== null,
+    );
+
+  if (parts.length === 0) return null;
+
+  const prefixes = new Set(parts.map((part) => part.prefix));
+  const suffixes = new Set(parts.map((part) => part.suffix));
+  if (prefixes.size > 1 || suffixes.size > 1) return null;
+
+  const total =
+    mode === "max"
+      ? Math.max(...parts.map((part) => part.amount))
+      : parts.reduce((sum, part) => sum + part.amount, 0);
+  const prefix = parts[0]?.prefix ?? "";
+  const suffix = parts[0]?.suffix ?? "";
+  return {
+    label: totalLabel,
+    value: `${parts
+      .map(
+        (part) =>
+          `${part.supplierName}: ${formatQuantityAmount(part.prefix, part.amount, part.suffix)}`,
+      )
+      .join(" + ")} = ${formatQuantityAmount(prefix, total, suffix)}`,
+  };
+}
+
+function detailValue(
+  block: CanvasReportBlock,
+  labels: readonly string[],
+): { raw: string; parsed: ReturnType<typeof parseQuantityAmount> } | null {
+  const normalizedLabels = new Set(labels.map((label) => label.toLocaleLowerCase()));
+  const raw =
+    block.details.find((detail) => normalizedLabels.has(detail.label.toLocaleLowerCase()))?.value ??
+    "";
+  if (!raw) return null;
+  return { raw, parsed: parseQuantityAmount(raw) };
+}
+
+function totalTableValue(
+  values: readonly { raw: string; parsed: ReturnType<typeof parseQuantityAmount> }[],
+  mode: "sum" | "max",
+): string {
+  const parsedValues = values
+    .map((value) => value.parsed)
+    .filter(
+      (value): value is NonNullable<ReturnType<typeof parseQuantityAmount>> => value !== null,
+    );
+
+  if (parsedValues.length === 0) return "—";
+
+  const prefixes = new Set(parsedValues.map((value) => value.prefix));
+  const suffixes = new Set(parsedValues.map((value) => value.suffix));
+  const prefix = prefixes.size === 1 ? (parsedValues[0]?.prefix ?? "") : "";
+  const suffix = suffixes.size === 1 ? (parsedValues[0]?.suffix ?? "") : "mixed units";
+  const total =
+    mode === "max"
+      ? Math.max(...parsedValues.map((value) => value.amount))
+      : parsedValues.reduce((sum, value) => sum + value.amount, 0);
+
+  return formatQuantityAmount(prefix, total, suffix);
+}
+
+function supplierBreakdownTable(supplierBlocks: readonly CanvasReportBlock[]): CanvasReportTable {
+  const metricRows = [
+    {
+      label: "Sample cost",
+      labels: ["Sample charge", "Sample cost"],
+      mode: "sum" as const,
+    },
+    {
+      label: "Sample lead time",
+      labels: ["Sample lead time"],
+      mode: "max" as const,
+    },
+    {
+      label: "Bulk cost",
+      labels: ["Production cost", "Bulk cost", "Unit price"],
+      mode: "sum" as const,
+    },
+    {
+      label: "Bulk lead time",
+      labels: ["Bulk lead time", "Production lead time", "Product lead time"],
+      mode: "max" as const,
+    },
+  ];
+
+  return {
+    columns: supplierBlocks.map((block) => block.title),
+    rows: metricRows.map((row) => {
+      const values = supplierBlocks.map((block) => detailValue(block, row.labels));
+      return {
+        label: row.label,
+        values: values.map((value) => value?.raw ?? "—"),
+        total: totalTableValue(
+          values.filter(
+            (value): value is { raw: string; parsed: ReturnType<typeof parseQuantityAmount> } =>
+              value !== null,
+          ),
+          row.mode,
+        ),
+      };
+    }),
+  };
 }
 
 function nodeTitle(node: CanvasNode | undefined): string {
@@ -252,16 +406,32 @@ function nodeTitle(node: CanvasNode | undefined): string {
 }
 
 function blockHtml(block: CanvasReportBlock): string {
+  const isSupplierBreakdown = block.id === "supplier-total-breakdown";
+  const supplierTable = block.table
+    ? `<table class="supplier-matrix"><thead><tr><th>Item</th>${block.table.columns
+        .map((column) => `<th>${escapeHtml(column)}</th>`)
+        .join("")}<th>Total</th></tr></thead><tbody>${block.table.rows
+        .map(
+          (row) =>
+            `<tr><th>${escapeHtml(row.label)}</th>${row.values
+              .map((value) => `<td>${lineBreaks(value)}</td>`)
+              .join("")}<td class="matrix-total">${lineBreaks(row.total)}</td></tr>`,
+        )
+        .join("")}</tbody></table>`
+    : "";
   const details = block.details
-    .map(
-      (detail) =>
-        `<tr><th>${escapeHtml(detail.label)}</th><td>${lineBreaks(detail.value)}</td></tr>`,
-    )
+    .map((detail, index) => {
+      const rowClass =
+        isSupplierBreakdown && index <= 2 && detail.label.toLocaleLowerCase().startsWith("total ")
+          ? ' class="total-row"'
+          : "";
+      return `<tr${rowClass}><th>${escapeHtml(detail.label)}</th><td>${lineBreaks(detail.value)}</td></tr>`;
+    })
     .join("");
   const image = block.image?.url
     ? `<div class="image"><img src="${escapeHtml(block.image.url)}" alt="${escapeHtml(block.image.alt)}"></div>`
     : `<div class="image empty">No image</div>`;
-  return `<article class="block"><div class="details"><h3>${escapeHtml(block.title)}</h3>${block.subtitle ? `<p>${escapeHtml(block.subtitle)}</p>` : ""}<table>${details}</table></div>${image}</article>`;
+  return `<article class="block${isSupplierBreakdown ? " breakdown-block" : ""}"><div class="details"><h3>${escapeHtml(block.title)}</h3>${block.subtitle ? `<p>${escapeHtml(block.subtitle)}</p>` : ""}${supplierTable}<table${isSupplierBreakdown ? ' class="breakdown-table"' : ""}>${details}</table></div>${image}</article>`;
 }
 
 function makeHtml(report: Omit<CanvasReport, "html" | "text">): string {
@@ -274,6 +444,15 @@ function makeHtml(report: Omit<CanvasReport, "html" | "text">): string {
     .meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 18px;font-size:12px}
     .block{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(220px,.75fr);gap:16px;border:1px solid #ddd;border-radius:8px;padding:12px;margin-bottom:12px;break-inside:avoid}
     table{width:100%;border-collapse:collapse;font-size:12px} th{width:34%;text-align:left;color:#666;font-weight:600;vertical-align:top;padding:5px 8px 5px 0} td{padding:5px 0;vertical-align:top}
+    .breakdown-block{border-color:#d9c9a3;background:#fffdf8}
+    .breakdown-table th{width:52%;padding:8px 10px;border-top:1px solid #eee}
+    .breakdown-table td{padding:8px 10px;border-top:1px solid #eee}
+    .breakdown-table .total-row th,.breakdown-table .total-row td{background:#f5ead0;color:#111;font-weight:700;border-top:0;border-bottom:1px solid #decda6}
+    .supplier-matrix{margin:10px 0 12px;border:1px solid #decda6}
+    .supplier-matrix th,.supplier-matrix td{border:1px solid #eadfca;padding:8px;text-align:left}
+    .supplier-matrix thead th{background:#f5ead0;color:#111;font-weight:700}
+    .supplier-matrix tbody th{background:#fff8ea;color:#333;font-weight:700}
+    .supplier-matrix .matrix-total{background:#fff4d8;font-weight:700}
     .image{min-height:160px;background:#f1f1ef;border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden;color:#777;font-size:12px}
     img{max-width:100%;max-height:260px;object-fit:contain}
     .page-break{break-before:page;border-top:1px solid #ddd;margin-top:32px;padding-top:8px}
@@ -317,6 +496,12 @@ function makeText(report: Omit<CanvasReport, "html" | "text">): string {
     lines.push(section.title);
     for (const block of section.blocks) {
       lines.push(`- ${block.title}`);
+      if (block.table) {
+        lines.push(["Item", ...block.table.columns, "Total"].join(" | "));
+        block.table.rows.forEach((row) =>
+          lines.push([row.label, ...row.values, row.total].join(" | ")),
+        );
+      }
       block.details.forEach((detail) => lines.push(`  ${detail.label}: ${detail.value}`));
       if (block.image?.url) lines.push(`  Image: ${block.image.url}`);
     }
@@ -440,6 +625,7 @@ export function buildCanvasReport(input: BuildCanvasReportInput): CanvasReport {
         .filter((node) => !findOutputForSource(node.id, nodesById, content.edges))
         .map(outputBlockForNode),
     );
+  const reportImage = selectedRenderImage(input.images) ?? finalOutputImage(outputBlocks);
 
   const breakdownLabels = new Set(
     [
@@ -471,22 +657,11 @@ export function buildCanvasReport(input: BuildCanvasReportInput): CanvasReport {
       value: detail.value,
     }));
   });
-  const sampleChargeParts = supplierBlocks
-    .map((block) => {
-      const value =
-        block.details.find((detail) => detail.label.toLocaleLowerCase() === "sample charge")
-          ?.value ?? "";
-      const parsed = parseCurrencyAmount(value);
-      return parsed ? { ...parsed, supplierName: block.title } : null;
-    })
-    .filter(
-      (part): part is { prefix: string; amount: number; supplierName: string } => part !== null,
-    );
-  const sampleChargePrefixes = new Set(sampleChargeParts.map((part) => part.prefix));
-  const sampleChargeTotal =
-    sampleChargeParts.length > 0 && sampleChargePrefixes.size === 1
-      ? sampleChargeParts.reduce((total, part) => total + part.amount, 0)
-      : null;
+  const totalDetails = [
+    totalBreakdownDetail(supplierBlocks, "sample charge", "Total sample charge", "sum"),
+    totalBreakdownDetail(supplierBlocks, "sample lead time", "Total sample lead time", "max"),
+    totalBreakdownDetail(supplierBlocks, "bulk lead time", "Total bulk lead time", "max"),
+  ].filter((detail): detail is { label: string; value: string } => detail !== null);
   const supplierBreakdowns: CanvasReportBlock[] =
     supplierBlocks.length > 0
       ? [
@@ -494,41 +669,25 @@ export function buildCanvasReport(input: BuildCanvasReportInput): CanvasReport {
             id: "supplier-total-breakdown",
             title: "Supplier total breakdown",
             subtitle: supplierBlocks.map((block) => block.subtitle ?? block.title).join(" + "),
-            details: [
-              ...(sampleChargeTotal !== null
-                ? [
-                    {
-                      label: "Total sample charge",
-                      value: `${sampleChargeParts
-                        .map(
-                          (part) =>
-                            `${part.supplierName}: ${formatCurrencyAmount(part.prefix, part.amount)}`,
-                        )
-                        .join(
-                          " + ",
-                        )} = ${formatCurrencyAmount(sampleChargeParts[0]?.prefix ?? "", sampleChargeTotal)}`,
-                    },
-                  ]
-                : []),
-              ...supplierBreakdownDetails,
-            ],
-            image: finalOutputImage(outputBlocks),
+            details: [...totalDetails, ...supplierBreakdownDetails],
+            table: supplierBreakdownTable(supplierBlocks),
+            image: reportImage,
           },
         ]
       : [];
 
   const sections: CanvasReportSection[] = [
-    { id: "customer-products", title: "Product list", blocks: customerProducts },
+    { id: "supplier-breakdown", title: "Supplier breakdown", blocks: supplierBreakdowns },
     { id: "supplier-details", title: "Supplier details", blocks: supplierBlocks },
-    { id: "pantone", title: "Pantone", blocks: pantoneBlocks },
-    { id: "generic-node", title: "Generic node", blocks: genericBlocks },
     {
       id: "output-prompt",
       title: "Output and input prompt",
       blocks: outputBlocks,
       pageBreakBefore: true,
     },
-    { id: "supplier-breakdown", title: "Supplier breakdown", blocks: supplierBreakdowns },
+    { id: "customer-products", title: "Product list", blocks: customerProducts },
+    { id: "pantone", title: "Pantone", blocks: pantoneBlocks },
+    { id: "generic-node", title: "Generic node", blocks: genericBlocks },
   ];
 
   const steps: CanvasReportStep[] = [

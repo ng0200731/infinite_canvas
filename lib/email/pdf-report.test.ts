@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
+import sharp from "sharp";
 
 import { renderCanvasReportPdf } from "@/lib/email/pdf-report";
 import type { CanvasReportPayload } from "@/lib/email/schemas";
+
+const tinyPng =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
 
 const report: CanvasReportPayload = {
   title: "Sample canvas report",
@@ -29,7 +33,10 @@ const report: CanvasReportPayload = {
             { label: "Owner", value: "Harborline Retail Ltd." },
             { label: "Product details", value: "Customer shirt sample" },
           ],
-          image: null,
+          image: {
+            url: tinyPng,
+            alt: "Customer shirt sample",
+          },
         },
       ],
     },
@@ -50,6 +57,42 @@ describe("renderCanvasReportPdf", () => {
       customerName: report.project.customerName,
       text: "Fallback text",
       report,
+    });
+
+    expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
+    expect(pdf.length).toBeGreaterThan(1_000);
+  });
+
+  it("converts WebP report images before embedding them in the PDF", async () => {
+    const webp = await sharp({
+      create: {
+        width: 1,
+        height: 1,
+        channels: 4,
+        background: "#ff0000",
+      },
+    })
+      .webp()
+      .toBuffer();
+    const webpReport: CanvasReportPayload = {
+      ...report,
+      sections: report.sections.map((section) => ({
+        ...section,
+        blocks: section.blocks.map((block) => ({
+          ...block,
+          image: {
+            url: `data:image/webp;base64,${webp.toString("base64")}`,
+            alt: "WebP render",
+          },
+        })),
+      })),
+    };
+
+    const pdf = await renderCanvasReportPdf({
+      title: webpReport.title,
+      customerName: webpReport.project.customerName,
+      text: "Fallback text",
+      report: webpReport,
     });
 
     expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
