@@ -92,10 +92,7 @@ const sections: MenuSection[] = [
     label: "Project",
     icon: FolderKanban,
     tab: "project",
-    items: [
-      { label: "New", tab: "project", mode: "new" },
-      { label: "View / edit", tab: "project", mode: "records" },
-    ],
+    items: [{ label: "View / edit", tab: "project", mode: "records" }],
   },
   {
     id: "settings",
@@ -121,6 +118,13 @@ const tabLabels: Record<TabId, string> = {
   "destination-country-settings": "Destination Country",
   "generic-node-settings": "Generic Node",
 };
+
+function sectionForTab(tabId: TabId): SectionId {
+  if (tabId === "customer" || tabId === "product" || tabId === "supplier" || tabId === "project") {
+    return tabId;
+  }
+  return "settings";
+}
 
 function ProjectWorkspacePanel({
   selectedProjectId,
@@ -268,6 +272,12 @@ export function WorkspaceShell({
   const [entityMode, setEntityMode] = useState<WorkspaceMode>("new");
   const [entityFormVersion, setEntityFormVersion] = useState(0);
 
+  function syncMenuToTab(tabId: TabId) {
+    const sectionId = sectionForTab(tabId);
+    setActiveSection(sectionId);
+    if (!isMenuCollapsed) setExpanded(sectionId);
+  }
+
   function openTab(tabId: TabId) {
     setTabs((current) =>
       current.some((tab) => tab.id === tabId)
@@ -275,6 +285,12 @@ export function WorkspaceShell({
         : [...current, { id: tabId, label: tabLabels[tabId] }],
     );
     setActiveTab(tabId);
+    syncMenuToTab(tabId);
+  }
+
+  function activateTab(tabId: TabId) {
+    setActiveTab(tabId);
+    syncMenuToTab(tabId);
   }
 
   function openProjectDetail(projectId: string) {
@@ -310,7 +326,14 @@ export function WorkspaceShell({
     setTabs((current) => {
       const next = current.filter((tab) => tab.id !== tabId);
       if (activeTab === tabId) {
-        setActiveTab(next.at(-1)?.id ?? null);
+        const nextActiveTab = next.at(-1)?.id ?? null;
+        setActiveTab(nextActiveTab);
+        if (nextActiveTab) {
+          syncMenuToTab(nextActiveTab);
+        } else {
+          setActiveSection(null);
+          setExpanded(null);
+        }
       }
       if (tabId === "project") {
         setSelectedProjectId(null);
@@ -401,11 +424,15 @@ export function WorkspaceShell({
                         onClick={() => {
                           if (item.mode) setEntityMode(item.mode);
                           if (item.mode === "new") setEntityFormVersion((current) => current + 1);
+                          if (section.id === "project") backToProjects();
                           openTab(item.tab);
                         }}
                         className={cn(
                           "focus-visible:ring-ring flex h-8 items-center rounded-md px-2 text-left text-sm transition-colors outline-none focus-visible:ring-2",
-                          activeTab === item.tab
+                          activeTab === item.tab &&
+                            (item.mode
+                              ? section.id === "project" || entityMode === item.mode
+                              : true)
                             ? "bg-sidebar-accent text-sidebar-accent-foreground"
                             : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                         )}
@@ -442,7 +469,7 @@ export function WorkspaceShell({
               <button
                 key={tab.id}
                 type="button"
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => activateTab(tab.id)}
                 onAuxClick={(event) => {
                   if (event.button === 1) {
                     event.preventDefault();

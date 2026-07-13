@@ -125,7 +125,7 @@
     @apply font-sans;
   }
   body {
-    @apply bg-background font-sans text-foreground;
+    @apply bg-background text-foreground font-sans;
   }
 }
 
@@ -190,6 +190,16 @@
 .react-flow__node.canvas-node-highlight > * {
   outline: 2px solid color-mix(in oklch, var(--ring), transparent 18%);
   outline-offset: 3px;
+}
+
+.react-flow__node.canvas-node-reference-highlight {
+  z-index: 11 !important;
+  filter: drop-shadow(0 12px 18px oklch(0.86 0.16 85 / 42%));
+}
+
+.react-flow__node.canvas-node-reference-highlight > * {
+  outline: 3px solid oklch(0.86 0.16 85);
+  outline-offset: 4px;
 }
 
 /* Placeholder for the note node's rich-text editor (contentEditable). */

@@ -1,5 +1,6 @@
 import type { Canvas, ImageRecord, Project } from "@/lib/store";
 import type { CanvasContent, CanvasEdge, CanvasNode } from "@/lib/nodes/types";
+import { getPantoneCatalogLabel, type PantoneCatalog } from "@/lib/nodes/pantone";
 import {
   getWorkspaceProductTypeLabel,
   type CustomerRecord,
@@ -100,6 +101,114 @@ function escapeHtml(value: string): string {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function isPantoneCatalog(value: string): value is PantoneCatalog {
+  return [
+    "solid-coated",
+    "solid-uncoated",
+    "fhi-tcx",
+    "fhi-tpg",
+    "metallics-coated",
+    "premium-metallics-coated",
+    "pastels-neons-coated",
+    "pastels-neons-uncoated",
+    "color-bridge-coated",
+    "color-bridge-uncoated",
+  ].includes(value);
+}
+
+function normalizedHex(value: string): `#${string}` | null {
+  const trimmed = value.trim();
+  const match = /^#?([0-9a-fA-F]{6})$/.exec(trimmed);
+  return match ? `#${match[1]?.toLowerCase()}` : null;
+}
+
+function crc32(bytes: readonly number[]): number {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function adler32(bytes: readonly number[]): number {
+  let a = 1;
+  let b = 0;
+  for (const byte of bytes) {
+    a = (a + byte) % 65521;
+    b = (b + a) % 65521;
+  }
+  return ((b << 16) | a) >>> 0;
+}
+
+function uint32Bytes(value: number): number[] {
+  return [(value >>> 24) & 255, (value >>> 16) & 255, (value >>> 8) & 255, value & 255];
+}
+
+function pngChunk(type: string, data: readonly number[]): number[] {
+  const typeBytes = Array.from(type).map((character) => character.charCodeAt(0));
+  return [
+    ...uint32Bytes(data.length),
+    ...typeBytes,
+    ...data,
+    ...uint32Bytes(crc32([...typeBytes, ...data])),
+  ];
+}
+
+function bytesToBase64(bytes: readonly number[]): string {
+  let binary = "";
+  const chunkSize = 8192;
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.slice(index, index + chunkSize));
+  }
+  return btoa(binary);
+}
+
+function zlibStoredBlock(bytes: readonly number[]): number[] {
+  const output = [0x78, 0x01];
+  for (let index = 0; index < bytes.length; index += 65535) {
+    const chunk = bytes.slice(index, index + 65535);
+    const isFinal = index + 65535 >= bytes.length;
+    const length = chunk.length;
+    output.push(isFinal ? 1 : 0, length & 255, (length >>> 8) & 255);
+    const nlen = ~length & 0xffff;
+    output.push(nlen & 255, (nlen >>> 8) & 255, ...chunk);
+  }
+  output.push(...uint32Bytes(adler32(bytes)));
+  return output;
+}
+
+function solidColorPngDataUrl(hex: `#${string}`): string {
+  const width = 64;
+  const height = 36;
+  const r = Number.parseInt(hex.slice(1, 3), 16);
+  const g = Number.parseInt(hex.slice(3, 5), 16);
+  const b = Number.parseInt(hex.slice(5, 7), 16);
+  const raw: number[] = [];
+  for (let y = 0; y < height; y += 1) {
+    raw.push(0);
+    for (let x = 0; x < width; x += 1) {
+      raw.push(r, g, b);
+    }
+  }
+  const png = [
+    0x89,
+    0x50,
+    0x4e,
+    0x47,
+    0x0d,
+    0x0a,
+    0x1a,
+    0x0a,
+    ...pngChunk("IHDR", [...uint32Bytes(width), ...uint32Bytes(height), 8, 2, 0, 0, 0]),
+    ...pngChunk("IDAT", zlibStoredBlock(raw)),
+    ...pngChunk("IEND", []),
+  ];
+  return `data:image/png;base64,${bytesToBase64(png)}`;
 }
 
 function lineBreaks(value: string): string {
@@ -366,6 +475,7 @@ function nodeTitle(node: CanvasNode | undefined): string {
 
 function blockHtml(block: CanvasReportBlock): string {
   const isSupplierBreakdown = block.id === "supplier-total-breakdown";
+  const isSupplierDetail = block.id.startsWith("supplier-") && !isSupplierBreakdown;
   const supplierTable = block.table
     ? `<table class="supplier-matrix"><thead><tr><th>Supplier</th><th>Image</th>${block.table.columns
         .map((column) => `<th>${escapeHtml(column)}</th>`)
@@ -392,6 +502,9 @@ function blockHtml(block: CanvasReportBlock): string {
   const image = block.image?.url
     ? `<div class="image"><img src="${escapeHtml(block.image.url)}" alt="${escapeHtml(block.image.alt)}"></div>`
     : `<div class="image empty">No image</div>`;
+  if (isSupplierDetail) {
+    return `<article class="block supplier-detail-block"><div class="supplier-detail-image">${image}</div><div class="details"><h3>${escapeHtml(block.title)}</h3>${block.subtitle ? `<p>${escapeHtml(block.subtitle)}</p>` : ""}<table>${details}</table></div></article>`;
+  }
   return `<article class="block${isSupplierBreakdown ? " breakdown-block" : ""}"><div class="details"><h3>${escapeHtml(block.title)}</h3>${block.subtitle ? `<p>${escapeHtml(block.subtitle)}</p>` : ""}${supplierTable}<table${isSupplierBreakdown ? ' class="breakdown-table"' : ""}>${details}</table></div>${image}</article>`;
 }
 
@@ -404,6 +517,10 @@ function makeHtml(report: Omit<CanvasReport, "html" | "text">): string {
     h3{font-size:14px;margin:0 0 6px} p{margin:0;color:#555}
     .meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 18px;font-size:12px}
     .block{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(220px,.75fr);gap:16px;border:1px solid #ddd;border-radius:8px;padding:12px;margin-bottom:12px;break-inside:avoid}
+    .supplier-detail-block{display:block}
+    .supplier-detail-block .supplier-detail-image{margin-bottom:12px}
+    .supplier-detail-block .image{min-height:210px}
+    .supplier-detail-block .image img{max-height:320px}
     table{width:100%;border-collapse:collapse;font-size:12px} th{width:34%;text-align:left;color:#666;font-weight:600;vertical-align:top;padding:5px 8px 5px 0} td{padding:5px 0;vertical-align:top}
     .breakdown-block{border-color:#d9c9a3;background:#fffdf8}
     .breakdown-table th{width:52%;padding:8px 10px;border-top:1px solid #eee}
@@ -542,16 +659,26 @@ export function buildCanvasReport(input: BuildCanvasReportInput): CanvasReport {
     .filter((node) => node.type === "pantone")
     .map((node) => {
       const data = asRecord(node.data);
+      const code = stringValue(data.code);
+      const hex = normalizedHex(stringValue(data.hex));
+      const catalogValue = stringValue(data.catalog);
+      const catalogLabel = isPantoneCatalog(catalogValue)
+        ? getPantoneCatalogLabel(catalogValue)
+        : "Pantone";
+      const title = code
+        ? `Pantone ${code} ${catalogLabel.toLocaleLowerCase()}`
+        : stringValue(data.alias) || "Pantone";
       return {
         id: `pantone-${node.id}`,
-        title: stringValue(data.alias) || "Pantone",
+        title,
         details: [
           { label: "Alias", value: stringValue(data.alias) },
-          { label: "Code", value: stringValue(data.code) },
+          { label: "Code", value: code },
           { label: "Name", value: stringValue(data.name) },
-          { label: "Hex", value: stringValue(data.hex) },
+          { label: "Catalog", value: catalogLabel },
+          { label: "Hex", value: hex ?? stringValue(data.hex) },
         ].filter((item) => item.value),
-        image: null,
+        image: hex ? { url: solidColorPngDataUrl(hex), alt: `${title} ${hex}` } : null,
       };
     });
 
@@ -606,16 +733,16 @@ export function buildCanvasReport(input: BuildCanvasReportInput): CanvasReport {
 
   const sections: CanvasReportSection[] = [
     { id: "supplier-breakdown", title: "Supplier breakdown", blocks: supplierBreakdowns },
+    { id: "customer-products", title: "Product list", blocks: customerProducts },
     { id: "supplier-details", title: "Supplier details", blocks: supplierBlocks },
+    { id: "pantone", title: "Pantone", blocks: pantoneBlocks },
+    { id: "generic-node", title: "Generic node", blocks: genericBlocks },
     {
       id: "output-prompt",
       title: "Output and input prompt",
       blocks: outputBlocks,
       pageBreakBefore: true,
     },
-    { id: "customer-products", title: "Product list", blocks: customerProducts },
-    { id: "pantone", title: "Pantone", blocks: pantoneBlocks },
-    { id: "generic-node", title: "Generic node", blocks: genericBlocks },
   ];
 
   const steps: CanvasReportStep[] = [

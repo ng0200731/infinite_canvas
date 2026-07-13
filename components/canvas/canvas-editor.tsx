@@ -1707,10 +1707,11 @@ function Editor({
         className: cn(
           node.className,
           hoveredGraph.nodeIds.has(node.id) && "canvas-node-highlight",
+          hoveredReferenceNodeId === node.id && "canvas-node-reference-highlight",
           dragOverGroupId === node.id && "canvas-group-drop-target",
         ),
       })),
-    [dragOverGroupId, hoveredGraph.nodeIds, nodes],
+    [dragOverGroupId, hoveredGraph.nodeIds, hoveredReferenceNodeId, nodes],
   );
 
   const renderedEdges = useMemo<CanvasEdge[]>(

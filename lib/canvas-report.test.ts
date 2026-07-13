@@ -230,6 +230,19 @@ const canvas: Canvas = {
         },
       },
       {
+        id: "pantone-node",
+        type: "pantone",
+        position: { x: 0, y: 500 },
+        data: {
+          alias: "brandGreen",
+          query: "Pantone 341C",
+          code: "341C",
+          name: "341C",
+          hex: "#007a53",
+          catalog: "solid-coated",
+        },
+      },
+      {
         id: "output-node",
         type: "imageOutput",
         position: { x: 900, y: 0 },
@@ -264,11 +277,11 @@ describe("buildCanvasReport", () => {
 
     expect(report.sections.map((section) => section.title)).toEqual([
       "Supplier breakdown",
-      "Supplier details",
-      "Output and input prompt",
       "Product list",
+      "Supplier details",
       "Pantone",
       "Generic node",
+      "Output and input prompt",
     ]);
     expect(report.project.customerName).toBe("Harborline Retail Ltd.");
     expect(report.outputBlocks).toHaveLength(1);
@@ -299,13 +312,28 @@ describe("buildCanvasReport", () => {
       ],
     });
     expect(report.supplierBreakdowns[0]?.image?.url).toBe(tinyPng);
+    expect(report.pantoneBlocks[0]?.title).toBe("Pantone 341C solid coated");
+    expect(report.pantoneBlocks[0]?.details).toContainEqual({
+      label: "Hex",
+      value: "#007a53",
+    });
+    expect(report.pantoneBlocks[0]?.image?.url).toMatch(/^data:image\/png;base64,/);
     expect(report.html.match(/Supplier details/g)).toHaveLength(1);
     expect(report.html.indexOf("Supplier breakdown")).toBeLessThan(
+      report.html.indexOf("Product list"),
+    );
+    expect(report.html.indexOf("Product list")).toBeLessThan(
       report.html.indexOf("Supplier details"),
     );
     expect(report.html.indexOf("Supplier details")).toBeLessThan(
+      report.html.indexOf("Pantone 341C solid coated"),
+    );
+    expect(report.html.indexOf("Generic node")).toBeLessThan(
       report.html.indexOf("Output and input prompt"),
     );
+    expect(report.html).toContain("Pantone 341C solid coated");
+    expect(report.html).toContain("#007a53");
+    expect(report.html).toContain("supplier-detail-block");
     expect(report.html).not.toContain("Total sample charge");
     expect(report.html).not.toContain("Bright Sample Factory - Production cost");
     expect(report.html).toContain("<th>Image</th>");

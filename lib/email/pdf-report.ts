@@ -61,16 +61,22 @@ async function convertToPdfImageBuffer(buffer: Buffer): Promise<Buffer | null> {
   }
 }
 
-async function imageBufferFromDataUrl(value: string): Promise<Buffer | null> {
+function dataUrlFromBuffer(buffer: Buffer, mimeType: SupportedPdfImageMime): string {
+  return `data:${mimeType};base64,${buffer.toString("base64")}`;
+}
+
+async function pdfImageSourceFromDataUrl(value: string): Promise<string | null> {
   const match = /^data:(image\/[-+.\w]+);base64,(.+)$/i.exec(value);
   if (!match) return null;
 
   const buffer = Buffer.from(match[2] ?? "", "base64");
-  return convertToPdfImageBuffer(buffer);
+  const converted = await convertToPdfImageBuffer(buffer);
+  if (!converted) return null;
+  return dataUrlFromBuffer(converted, supportedMimeFromBuffer(converted) ?? "image/png");
 }
 
-async function imageBufferFromUrl(value: string): Promise<Buffer | null> {
-  if (isDataImageUrl(value)) return imageBufferFromDataUrl(value);
+async function pdfImageSourceFromUrl(value: string): Promise<string | null> {
+  if (isDataImageUrl(value)) return pdfImageSourceFromDataUrl(value);
 
   let parsed: URL;
   try {
@@ -86,7 +92,9 @@ async function imageBufferFromUrl(value: string): Promise<Buffer | null> {
     const response = await fetch(parsed, { signal: controller.signal });
     if (!response.ok) return null;
     const buffer = Buffer.from(await response.arrayBuffer());
-    return convertToPdfImageBuffer(buffer);
+    const converted = await convertToPdfImageBuffer(buffer);
+    if (!converted) return null;
+    return dataUrlFromBuffer(converted, supportedMimeFromBuffer(converted) ?? "image/png");
   } catch {
     return null;
   } finally {
@@ -94,7 +102,7 @@ async function imageBufferFromUrl(value: string): Promise<Buffer | null> {
   }
 }
 
-async function collectImageBuffers(report: CanvasReportPayload): Promise<Map<string, Buffer>> {
+async function collectImageSources(report: CanvasReportPayload): Promise<Map<string, string>> {
   const entries = report.sections.flatMap((section) =>
     section.blocks.flatMap((block) => {
       const blockEntries: Array<readonly [string, string]> = block.image?.url
@@ -109,7 +117,7 @@ async function collectImageBuffers(report: CanvasReportPayload): Promise<Map<str
     }),
   );
   const buffers = await Promise.all(
-    entries.map(async ([id, url]) => [id, await imageBufferFromUrl(url)] as const),
+    entries.map(async ([id, url]) => [id, await pdfImageSourceFromUrl(url)] as const),
   );
   buffers.forEach(([id, buffer]) => {
     if (buffer) return;
@@ -117,7 +125,7 @@ async function collectImageBuffers(report: CanvasReportPayload): Promise<Map<str
   });
 
   return new Map(
-    buffers.filter((entry): entry is readonly [string, Buffer] => entry[1] instanceof Buffer),
+    buffers.filter((entry): entry is readonly [string, string] => typeof entry[1] === "string"),
   );
 }
 
@@ -218,7 +226,7 @@ function drawSupplierMatrix(
   doc: PDFKit.PDFDocument,
   table: NonNullable<CanvasReportPayload["sections"][number]["blocks"][number]["table"]>,
   blockId: string,
-  images: Map<string, Buffer>,
+  images: Map<string, string>,
   x: number,
   y: number,
   width: number,
@@ -306,7 +314,7 @@ function drawSupplierMatrix(
 
 function drawImage(
   doc: PDFKit.PDFDocument,
-  buffer: Buffer | undefined,
+  source: string | undefined,
   x: number,
   y: number,
   width: number,
@@ -314,7 +322,7 @@ function drawImage(
   fallback: string,
 ) {
   doc.roundedRect(x, y, width, height, 6).fillAndStroke("#f2f2f0", "#dddddd");
-  if (!buffer) {
+  if (!source) {
     doc.font("Helvetica").fontSize(8).fillColor("#777777");
     doc.text(fallback, x + 10, y + height / 2 - 8, { width: width - 20, align: "center" });
     doc.fillColor("#111111");
@@ -322,7 +330,7 @@ function drawImage(
   }
 
   try {
-    doc.image(buffer, x + 8, y + 8, {
+    doc.image(source, x + 8, y + 8, {
       fit: [width - 16, height - 16],
       align: "center",
       valign: "center",
@@ -341,9 +349,11 @@ function drawBlock(
   doc: PDFKit.PDFDocument,
   report: CanvasReportPayload,
   block: CanvasReportPayload["sections"][number]["blocks"][number],
-  images: Map<string, Buffer>,
+  images: Map<string, string>,
 ) {
   const contentWidth = doc.page.width - PAGE_MARGIN * 2;
+  const isSupplierDetail =
+    block.id.startsWith("supplier-") && block.id !== "supplier-total-breakdown";
   const imageWidth = 190;
   const detailsWidth = contentWidth - imageWidth - 18;
   const detailHeight = block.details.reduce(
@@ -352,6 +362,45 @@ function drawBlock(
     38 + (block.table ? tableHeight(block.table) + 8 : 0),
   );
   const blockHeight = Math.max(170, Math.min(520, detailHeight + 18));
+
+  if (isSupplierDetail) {
+    const supplierImageHeight = 170;
+    const supplierDetailTop = block.subtitle ? 232 : 216;
+    const supplierDetailsHeight = block.details.reduce(
+      (height, detail) =>
+        height + Math.max(16, doc.heightOfString(detail.value, { width: contentWidth - 144 }) + 4),
+      0,
+    );
+    const supplierBlockHeight = Math.max(
+      270,
+      Math.min(680, supplierDetailTop + supplierDetailsHeight + 18),
+    );
+
+    ensureSpace(doc, supplierBlockHeight + BLOCK_GAP, report);
+    const top = doc.y;
+    doc
+      .roundedRect(PAGE_MARGIN, top, contentWidth, supplierBlockHeight, 8)
+      .strokeColor("#dddddd")
+      .stroke();
+    doc.font("Helvetica-Bold").fontSize(11).fillColor("#111111");
+    doc.text(block.title, PAGE_MARGIN + 12, top + 12, { width: contentWidth - 24 });
+    if (block.subtitle) {
+      doc.font("Helvetica").fontSize(8).fillColor("#666666");
+      doc.text(block.subtitle, PAGE_MARGIN + 12, top + 28, { width: contentWidth - 24 });
+    }
+    drawImage(
+      doc,
+      images.get(block.id),
+      PAGE_MARGIN + 12,
+      top + (block.subtitle ? 48 : 34),
+      contentWidth - 24,
+      supplierImageHeight,
+      block.image?.url ? "Image URL included in email HTML." : "No image",
+    );
+    drawDetails(doc, block.details, PAGE_MARGIN + 12, top + supplierDetailTop, contentWidth - 24);
+    doc.y = top + supplierBlockHeight + BLOCK_GAP;
+    return;
+  }
 
   ensureSpace(doc, blockHeight + BLOCK_GAP, report);
   const top = doc.y;
@@ -393,7 +442,7 @@ function drawBlock(
 function drawReport(
   doc: PDFKit.PDFDocument,
   report: CanvasReportPayload,
-  images: Map<string, Buffer>,
+  images: Map<string, string>,
 ) {
   addHeader(doc, report);
   doc.y = PAGE_MARGIN + HEADER_HEIGHT;
@@ -467,7 +516,7 @@ function legacyReport(input: LegacyReportInput): CanvasReportPayload {
 
 export async function renderCanvasReportPdf(input: ReportInput): Promise<Buffer> {
   const report = input.report ?? legacyReport(input);
-  const images = await collectImageBuffers(report);
+  const images = await collectImageSources(report);
 
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: "A4", margin: PAGE_MARGIN, bufferPages: true });

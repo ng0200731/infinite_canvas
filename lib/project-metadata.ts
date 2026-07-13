@@ -92,6 +92,40 @@ export function parseLegacyProjectDescription(description: string | null): Proje
   };
 }
 
+export function serializeLegacyProjectDescription(metadata: ProjectMetadata): string {
+  return JSON.stringify({
+    version: 1,
+    customer: {
+      id: metadata.customerId ?? "legacy-customer",
+      name: metadata.customerName ?? "Unknown customer",
+    },
+    employee: {
+      ...(metadata.employeeId ? { id: metadata.employeeId } : {}),
+      userName: metadata.employeeName ?? "Unknown employee",
+      title: metadata.employeeTitle ?? "Unknown title",
+      email: metadata.employeeEmail ?? "unknown@example.com",
+      tel: metadata.employeeTel ?? "Unknown phone",
+    },
+    ...(metadata.currencyCode
+      ? {
+          currency: {
+            code: metadata.currencyCode,
+            ...(metadata.currencyName ? { name: metadata.currencyName } : {}),
+            ...(metadata.currencySymbol ? { symbol: metadata.currencySymbol } : {}),
+          },
+        }
+      : {}),
+    ...(metadata.destinationCountryCode && metadata.destinationCountryName
+      ? {
+          destination: {
+            code: metadata.destinationCountryCode,
+            name: metadata.destinationCountryName,
+          },
+        }
+      : {}),
+  });
+}
+
 export function mergeProjectMetadata(
   current: Partial<ProjectMetadata>,
   description: string | null,

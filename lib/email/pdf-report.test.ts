@@ -61,6 +61,7 @@ describe("renderCanvasReportPdf", () => {
 
     expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
     expect(pdf.length).toBeGreaterThan(1_000);
+    expect(pdf.toString("latin1")).toContain("/Subtype /Image");
   });
 
   it("converts WebP report images before embedding them in the PDF", async () => {
@@ -97,5 +98,6 @@ describe("renderCanvasReportPdf", () => {
 
     expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
     expect(pdf.length).toBeGreaterThan(1_000);
+    expect(pdf.toString("latin1")).toContain("/Subtype /Image");
   });
 });

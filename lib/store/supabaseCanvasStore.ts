@@ -1,7 +1,11 @@
 import { z } from "zod";
 
 import { EMPTY_CANVAS_CONTENT, NODE_TYPES, type CanvasContent } from "@/lib/nodes/types";
-import { mergeProjectMetadata, type ProjectMetadata } from "@/lib/project-metadata";
+import {
+  mergeProjectMetadata,
+  serializeLegacyProjectDescription,
+  type ProjectMetadata,
+} from "@/lib/project-metadata";
 import {
   parseCanvasContent,
   parseCanvasEdge,
@@ -435,7 +439,11 @@ export function createSupabaseCanvasStore(): CanvasStore {
       }
       const legacy = await supabase
         .from("projects")
-        .insert({ user_id: userId, name: input.name.trim(), description })
+        .insert({
+          user_id: userId,
+          name: input.name.trim(),
+          description: serializeLegacyProjectDescription(metadata),
+        })
         .select(LEGACY_PROJECT_COLUMNS)
         .single();
       assertNoError({ error: legacy.error }, "createProject");
@@ -465,7 +473,7 @@ export function createSupabaseCanvasStore(): CanvasStore {
       }
       const legacyPatch: Record<string, unknown> = { updated_at: patch.updated_at };
       if (input.name !== undefined) legacyPatch.name = input.name;
-      if (input.description !== undefined) legacyPatch.description = input.description;
+      legacyPatch.description = serializeLegacyProjectDescription(metadata);
       const legacy = await supabase
         .from("projects")
         .update(legacyPatch)

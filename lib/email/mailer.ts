@@ -167,8 +167,11 @@ function withLineBreaks(value: string): string {
 
 function sanitizeReportHtmlForEmail(html: string): string {
   return html.replace(
-    /<img\b([^>]*?)\bsrc=(["'])data:image\/[^"']+\2([^>]*)>/gi,
-    '<span class="email-image-note">Image included in the attached PDF.</span>',
+    /<img\b[^>]*?\bsrc=(["'])(data:image\/[^"']+)\1[^>]*>/gi,
+    (match, _quote: string, src: string) =>
+      src.length <= 50_000
+        ? match
+        : '<span class="email-image-note">Image included in the attached PDF.</span>',
   );
 }
 

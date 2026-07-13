@@ -127,7 +127,7 @@ function ZoomableProductImage({ item }: { item: ProductImageGalleryItem }) {
   return (
     <div
       className={cn(
-        "bg-muted relative flex min-h-[20rem] touch-none items-center justify-center overflow-hidden rounded-md border",
+        "bg-muted relative flex h-full min-h-[20rem] touch-none items-center justify-center overflow-hidden rounded-md border",
         zoom > MIN_ZOOM ? (isPanning ? "cursor-grabbing" : "cursor-grab") : "cursor-default",
       )}
       onWheel={handleWheel}
@@ -141,7 +141,7 @@ function ZoomableProductImage({ item }: { item: ProductImageGalleryItem }) {
         src={item.variant.image.url}
         alt={`${item.product.subject} variant ${item.variantIndex + 1}`}
         draggable={false}
-        className="max-h-full max-w-full object-contain transition-transform duration-100 ease-out select-none"
+        className="h-full w-full object-contain transition-transform duration-100 ease-out select-none"
         style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
       />
       <div className="pointer-events-none absolute bottom-3 left-1/2 flex max-w-[calc(100%-1.5rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-x-3 gap-y-1 rounded-md bg-black/75 px-3 py-2 text-xs font-medium text-white shadow-xl ring-1 ring-white/20">
@@ -313,7 +313,7 @@ export function ProductImageBrowserDialog({
         <div className="grid min-h-0 gap-4 p-5">
           {previewItem ? (
             <div className="grid min-h-0 gap-4 lg:grid-cols-[7fr_3fr]">
-              <div className="relative min-h-0">
+              <div className="relative h-full min-h-0">
                 <ZoomableProductImage key={previewItem.id} item={previewItem} />
                 {hasPrevious ? (
                   <Button

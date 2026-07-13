@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { mergeProjectMetadata, parseLegacyProjectDescription } from "./project-metadata";
+import {
+  mergeProjectMetadata,
+  parseLegacyProjectDescription,
+  serializeLegacyProjectDescription,
+} from "./project-metadata";
 
 describe("project metadata", () => {
   it("reads legacy JSON project descriptions without exposing the transport shape", () => {
@@ -41,5 +45,29 @@ describe("project metadata", () => {
         }),
       ).employeeEmail,
     ).toBe("new@example.com");
+  });
+
+  it("serializes metadata for databases without first-class project metadata columns", () => {
+    const description = serializeLegacyProjectDescription({
+      customerId: "customer-1",
+      customerName: "Harborline Retail Ltd.",
+      employeeId: "employee-1",
+      employeeName: "Mia Chen",
+      employeeTitle: "Merchandising Manager",
+      employeeEmail: "mia@example.com",
+      employeeTel: "+86 755 8821 1042",
+      currencyCode: "USD",
+      currencyName: "US Dollar",
+      currencySymbol: "$",
+      destinationCountryCode: "US",
+      destinationCountryName: "United States",
+    });
+
+    expect(parseLegacyProjectDescription(description)).toMatchObject({
+      customerName: "Harborline Retail Ltd.",
+      employeeName: "Mia Chen",
+      currencyCode: "USD",
+      destinationCountryName: "United States",
+    });
   });
 });

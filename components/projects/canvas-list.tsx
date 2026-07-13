@@ -2,7 +2,16 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { ArrowUpRight, FileImage, Loader2, Mail, Trash2 } from "lucide-react";
+import {
+  ArrowUpRight,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  FileImage,
+  Loader2,
+  Mail,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { buildCanvasReport } from "@/lib/canvas-report";
@@ -48,6 +57,8 @@ function SendCanvasDialog({
   const [sending, setSending] = useState(false);
   const [sentRecords, setSentRecords] = useState<string[]>([]);
   const [recipient, setRecipient] = useState(defaultRecipient);
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+  const previewImage = previewIndex === null ? null : (images[previewIndex] ?? null);
 
   async function handleOpenChange(nextOpen: boolean) {
     setOpen(nextOpen);
@@ -61,11 +72,32 @@ function SendCanvasDialog({
       ]);
       setLoadedCanvas(fullCanvas ?? canvas);
       setImages(renderImages);
+      setPreviewIndex(null);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to load render history");
     } finally {
       setLoading(false);
     }
+  }
+
+  function toggleImageSelection(imageId: string) {
+    setSelectedImageIds((current) =>
+      current.includes(imageId) ? current.filter((id) => id !== imageId) : [...current, imageId],
+    );
+  }
+
+  function showPreviousPreview() {
+    setPreviewIndex((current) => {
+      if (current === null || images.length === 0) return current;
+      return (current - 1 + images.length) % images.length;
+    });
+  }
+
+  function showNextPreview() {
+    setPreviewIndex((current) => {
+      if (current === null || images.length === 0) return current;
+      return (current + 1) % images.length;
+    });
   }
 
   async function sendSelected() {
@@ -169,7 +201,7 @@ function SendCanvasDialog({
             </div>
           ) : images.length ? (
             <div className="grid max-h-80 grid-cols-2 gap-3 overflow-y-auto pr-1 sm:grid-cols-3">
-              {images.map((image) => {
+              {images.map((image, index) => {
                 const selected = selectedImageIds.includes(image.id);
                 return (
                   <button
@@ -178,11 +210,7 @@ function SendCanvasDialog({
                     className={`rounded-md border p-2 text-left ${
                       selected ? "border-primary ring-primary ring-2" : ""
                     }`}
-                    onClick={() =>
-                      setSelectedImageIds((current) =>
-                        selected ? current.filter((id) => id !== image.id) : [...current, image.id],
-                      )
-                    }
+                    onClick={() => setPreviewIndex(index)}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
@@ -230,6 +258,73 @@ function SendCanvasDialog({
               {sending ? "Sending..." : "Send report"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={previewIndex !== null}
+        onOpenChange={(nextOpen) => !nextOpen && setPreviewIndex(null)}
+      >
+        <DialogContent
+          showCloseButton
+          className="h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-[calc(100vw-2rem)] grid-rows-[auto_1fr_auto] overflow-hidden bg-black/92 p-4 text-white sm:max-w-[calc(100vw-2rem)]"
+        >
+          <DialogHeader>
+            <DialogTitle>Render preview</DialogTitle>
+            <DialogDescription className="text-white/70">
+              Review the full image, then select it for the canvas report.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="relative min-h-0">
+            {previewImage ? (
+              <>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={previewImage.url}
+                  alt={previewImage.prompt ?? "Render history image"}
+                  className="h-full w-full object-contain"
+                />
+                {images.length > 1 ? (
+                  <>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="secondary"
+                      className="absolute top-1/2 left-2 size-11 -translate-y-1/2 rounded-full shadow-xl"
+                      aria-label="Previous render image"
+                      onClick={showPreviousPreview}
+                    >
+                      <ChevronLeft className="size-5" />
+                    </Button>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="secondary"
+                      className="absolute top-1/2 right-2 size-11 -translate-y-1/2 rounded-full shadow-xl"
+                      aria-label="Next render image"
+                      onClick={showNextPreview}
+                    >
+                      <ChevronRight className="size-5" />
+                    </Button>
+                  </>
+                ) : null}
+              </>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/15 pt-3">
+            <div className="min-w-0 text-sm text-white/70">
+              {previewImage ? formatDate(previewImage.createdAt) : ""}
+            </div>
+            {previewImage ? (
+              <Button
+                type="button"
+                variant={selectedImageIds.includes(previewImage.id) ? "secondary" : "default"}
+                onClick={() => toggleImageSelection(previewImage.id)}
+              >
+                {selectedImageIds.includes(previewImage.id) ? <Check /> : <FileImage />}
+                {selectedImageIds.includes(previewImage.id) ? "Selected" : "Select"}
+              </Button>
+            ) : null}
+          </div>
         </DialogContent>
       </Dialog>
     </>
