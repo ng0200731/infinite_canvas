@@ -1021,11 +1021,7 @@ export function GenerateNode({ id, data, parentId, selected }: NodeProps<Generat
         </div>
 
         <div className="focus-within:border-ring focus-within:ring-ring/30 bg-background/60 relative rounded-md border focus-within:ring-2">
-          <div
-            ref={previewRef}
-            className="pointer-events-none absolute inset-0 z-20 overflow-hidden p-2 text-sm leading-5 font-semibold break-words whitespace-pre-wrap"
-            aria-hidden="true"
-          >
+          <div ref={previewRef} className="hidden" aria-hidden="true">
             <PromptPreview
               value={promptDraft}
               references={connectedReferences.map((reference) => ({
@@ -1054,7 +1050,7 @@ export function GenerateNode({ id, data, parentId, selected }: NodeProps<Generat
             onKeyDown={handlePromptKeyDown}
             onScroll={handlePromptScroll}
             onBlur={() => window.setTimeout(() => setMention(null), 120)}
-            className="nodrag caret-foreground relative z-10 block min-h-36 w-full resize-none overflow-y-auto rounded-md border border-transparent bg-transparent p-2 text-sm leading-5 font-semibold text-transparent outline-none placeholder:text-transparent"
+            className="nodrag text-foreground placeholder:text-muted-foreground caret-foreground relative z-10 block min-h-36 w-full resize-none overflow-y-auto rounded-md border border-transparent bg-transparent p-2 text-sm leading-5 font-semibold outline-none"
           />
           {mention && connectedReferences.length > 0 && (
             <div className="nodrag nopan bg-popover text-popover-foreground absolute right-0 left-0 z-30 mt-1 max-h-32 overflow-y-auto rounded-md border p-1 shadow-md">

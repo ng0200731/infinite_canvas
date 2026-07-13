@@ -95,10 +95,19 @@ async function imageBufferFromUrl(value: string): Promise<Buffer | null> {
 }
 
 async function collectImageBuffers(report: CanvasReportPayload): Promise<Map<string, Buffer>> {
-  const entries = report.sections
-    .flatMap((section) => section.blocks)
-    .filter((block) => block.image?.url)
-    .map((block) => [block.id, block.image?.url ?? ""] as const);
+  const entries = report.sections.flatMap((section) =>
+    section.blocks.flatMap((block) => {
+      const blockEntries: Array<readonly [string, string]> = block.image?.url
+        ? [[block.id, block.image.url] as const]
+        : [];
+      const tableEntries: Array<readonly [string, string]> = [];
+      block.table?.rows.forEach((row, index) => {
+        if (!row.image?.url) return;
+        tableEntries.push([`${block.id}:table:${index}`, row.image.url] as const);
+      });
+      return [...blockEntries, ...tableEntries];
+    }),
+  );
   const buffers = await Promise.all(
     entries.map(async ([id, url]) => [id, await imageBufferFromUrl(url)] as const),
   );
@@ -208,19 +217,24 @@ function tableHeight(
 function drawSupplierMatrix(
   doc: PDFKit.PDFDocument,
   table: NonNullable<CanvasReportPayload["sections"][number]["blocks"][number]["table"]>,
+  blockId: string,
+  images: Map<string, Buffer>,
   x: number,
   y: number,
   width: number,
 ): number {
-  const columns = ["Supplier", ...table.columns];
+  const columns = ["Supplier", "Image", ...table.columns];
   const rowHeight = 26;
   const headerHeight = 24;
   const firstColumnWidth = 86;
-  const remainingWidth = width - firstColumnWidth;
-  const otherColumnWidth = remainingWidth / Math.max(1, columns.length - 1);
-  const columnWidths = columns.map((_, index) =>
-    index === 0 ? firstColumnWidth : otherColumnWidth,
-  );
+  const imageColumnWidth = 42;
+  const remainingWidth = width - firstColumnWidth - imageColumnWidth;
+  const otherColumnWidth = remainingWidth / Math.max(1, columns.length - 2);
+  const columnWidths = columns.map((_, index) => {
+    if (index === 0) return firstColumnWidth;
+    if (index === 1) return imageColumnWidth;
+    return otherColumnWidth;
+  });
   let cursorX = x;
 
   doc.font("Helvetica-Bold").fontSize(7).fillColor("#111111");
@@ -237,7 +251,7 @@ function drawSupplierMatrix(
 
   table.rows.forEach((row, rowIndex) => {
     const rowY = y + headerHeight + rowIndex * rowHeight;
-    const values = [row.label, ...row.values];
+    const values = [row.label, "", ...row.values];
     cursorX = x;
     values.forEach((value, columnIndex) => {
       const columnWidth = columnWidths[columnIndex] ?? otherColumnWidth;
@@ -254,6 +268,34 @@ function drawSupplierMatrix(
           height: rowHeight - 8,
           ellipsis: true,
         });
+      if (columnIndex === 1) {
+        const image = images.get(`${blockId}:table:${rowIndex}`);
+        if (image) {
+          try {
+            doc.image(image, cursorX + 5, rowY + 4, {
+              fit: [columnWidth - 10, rowHeight - 8],
+              align: "center",
+              valign: "center",
+            });
+          } catch {
+            doc
+              .font("Helvetica")
+              .fontSize(6)
+              .text("Image", cursorX + 4, rowY + 8, {
+                width: columnWidth - 8,
+                align: "center",
+              });
+          }
+        } else if (!isTotalRow) {
+          doc
+            .font("Helvetica")
+            .fontSize(7)
+            .text("—", cursorX + 4, rowY + 8, {
+              width: columnWidth - 8,
+              align: "center",
+            });
+        }
+      }
       cursorX += columnWidth;
     });
   });
@@ -324,7 +366,15 @@ function drawBlock(
 
   const detailTop = top + (block.subtitle ? 46 : 34);
   const afterTable = block.table
-    ? drawSupplierMatrix(doc, block.table, PAGE_MARGIN + 12, detailTop, detailsWidth)
+    ? drawSupplierMatrix(
+        doc,
+        block.table,
+        block.id,
+        images,
+        PAGE_MARGIN + 12,
+        detailTop,
+        detailsWidth,
+      )
     : detailTop;
   drawDetails(doc, block.details, PAGE_MARGIN + 12, afterTable, detailsWidth);
   drawImage(

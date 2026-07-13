@@ -79,6 +79,7 @@ const canvasReportTableSchema = z
         z
           .object({
             label: z.string().trim().min(1).max(120),
+            image: canvasReportImageSchema.nullable().optional(),
             values: z.array(z.string().trim().min(1).max(1_000)).max(20),
           })
           .strict(),

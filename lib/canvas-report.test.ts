@@ -277,42 +277,26 @@ describe("buildCanvasReport", () => {
       value: "Generate label mockup from @supplier",
     });
     expect(report.supplierBreakdowns).toHaveLength(1);
-    expect(report.supplierBreakdowns[0]?.details).toContainEqual({
-      label: "Total sample charge",
-      value: "Bright Sample Factory: USD 45 + Elastic Works: USD 25 = USD 70",
-    });
-    expect(report.supplierBreakdowns[0]?.details).toContainEqual({
-      label: "Total sample lead time",
-      value: "Bright Sample Factory: 7 days + Elastic Works: 5 days = 7 days",
-    });
-    expect(report.supplierBreakdowns[0]?.details).toContainEqual({
-      label: "Total bulk lead time",
-      value: "Bright Sample Factory: 18 days + Elastic Works: 20 days = 20 days",
-    });
+    expect(report.supplierBreakdowns[0]?.details).toEqual([]);
     expect(report.supplierBreakdowns[0]?.table).toEqual({
       columns: ["Sample cost", "Sample lead time", "Bulk cost", "Bulk lead time"],
       rows: [
         {
           label: "Bright Sample Factory",
+          image: { url: tinyPng, alt: "label.png" },
           values: ["USD 45", "7 days", "0.18 per pc", "18 days"],
         },
         {
           label: "Elastic Works",
+          image: { url: tinyPng, alt: "elastic.png" },
           values: ["USD 25", "5 days", "0.42 per meter", "20 days"],
         },
         {
           label: "Total",
+          image: null,
           values: ["USD 70", "7 days", "0.60 mixed units", "20 days"],
         },
       ],
-    });
-    expect(report.supplierBreakdowns[0]?.details).toContainEqual({
-      label: "Bright Sample Factory - Production cost",
-      value: "0.18 per pc",
-    });
-    expect(report.supplierBreakdowns[0]?.details).toContainEqual({
-      label: "Elastic Works - Bulk Lead Time",
-      value: "20 days",
     });
     expect(report.supplierBreakdowns[0]?.image?.url).toBe(tinyPng);
     expect(report.html.match(/Supplier details/g)).toHaveLength(1);
@@ -322,9 +306,11 @@ describe("buildCanvasReport", () => {
     expect(report.html.indexOf("Supplier details")).toBeLessThan(
       report.html.indexOf("Output and input prompt"),
     );
-    expect(report.html).toContain('class="breakdown-table"');
+    expect(report.html).not.toContain("Total sample charge");
+    expect(report.html).not.toContain("Bright Sample Factory - Production cost");
+    expect(report.html).toContain("<th>Image</th>");
+    expect(report.html).toContain('class="matrix-thumb"');
     expect(report.html).toContain('class="supplier-matrix"');
-    expect(report.html).toContain('class="total-row"');
     expect(report.html).toContain("Output and input prompt");
   });
 
