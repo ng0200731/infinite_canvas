@@ -113,7 +113,7 @@ describe("ImagePreviewDialog", () => {
     });
 
     expect(document.body.textContent).toContain("120%");
-    expect(image?.style.transform).toBe("translate(0px, 0px) scale(1.2)");
+    expect(image?.parentElement?.style.transform).toBe("translate(0px, 0px) scale(1.2)");
 
     await act(async () => {
       image?.parentElement?.dispatchEvent(
@@ -127,7 +127,7 @@ describe("ImagePreviewDialog", () => {
       );
     });
 
-    expect(image?.style.transform).toBe("translate(30px, 30px) scale(1.2)");
+    expect(image?.parentElement?.style.transform).toBe("translate(30px, 30px) scale(1.2)");
 
     await act(async () => {
       root.unmount();
@@ -280,6 +280,17 @@ describe("ImagePreviewDialog", () => {
       collarButton?.click();
     });
     expect(collarButton?.getAttribute("aria-pressed")).toBe("true");
+
+    const hideButton = document.querySelector<HTMLButtonElement>(
+      'button[aria-label="Hide Collar mask"]',
+    );
+    expect(hideButton).not.toBeNull();
+
+    await act(async () => {
+      hideButton?.click();
+    });
+
+    expect(document.querySelector('button[aria-label="Show Collar mask"]')).not.toBeNull();
 
     await act(async () => {
       root.unmount();

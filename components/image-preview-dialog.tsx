@@ -16,6 +16,8 @@ import {
 import {
   ChevronLeft,
   ChevronRight,
+  Eye,
+  EyeOff,
   Mouse,
   Move,
   PenLine,
@@ -102,6 +104,13 @@ interface PixelSource {
   height: number;
 }
 
+interface SampledColor {
+  hex: string;
+  rgb: readonly [number, number, number];
+  alpha: number;
+  point: Point;
+}
+
 interface ImageSize {
   width: number;
   height: number;
@@ -116,6 +125,26 @@ function uid(): string {
 
 function clampZoom(value: number): number {
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
+}
+
+function componentToHex(value: number): string {
+  return Math.min(255, Math.max(0, value)).toString(16).padStart(2, "0").toUpperCase();
+}
+
+function rgbaToHex(red: number, green: number, blue: number): string {
+  return `#${componentToHex(red)}${componentToHex(green)}${componentToHex(blue)}`;
+}
+
+function samplePixelColor(source: PixelSource, point: Point): SampledColor | null {
+  const x = Math.min(source.width - 1, Math.max(0, Math.floor(point.x * source.width)));
+  const y = Math.min(source.height - 1, Math.max(0, Math.floor(point.y * source.height)));
+  const offset = (y * source.width + x) * 4;
+  if (offset < 0 || offset + 3 >= source.pixels.length) return null;
+  const red = source.pixels[offset] ?? 0;
+  const green = source.pixels[offset + 1] ?? 0;
+  const blue = source.pixels[offset + 2] ?? 0;
+  const alpha = source.pixels[offset + 3] ?? 0;
+  return { hex: rgbaToHex(red, green, blue), rgb: [red, green, blue], alpha, point };
 }
 
 function drawStroke(
@@ -275,7 +304,10 @@ export function ImagePreviewDialog({
   const [imageDisplaySize, setImageDisplaySize] = useState<ImageSize | null>(null);
   const [pixelError, setPixelError] = useState<string | null>(null);
   const [hoveredMaskId, setHoveredMaskId] = useState<string | null>(null);
+  const [eyeHoveredMaskId, setEyeHoveredMaskId] = useState<string | null>(null);
   const [selectedMaskId, setSelectedMaskId] = useState<string | null>(null);
+  const [hiddenMaskIds, setHiddenMaskIds] = useState<string[]>([]);
+  const [sampledColor, setSampledColor] = useState<SampledColor | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const drawRef = useRef<DrawState | null>(null);
   const imageFrameRef = useRef<HTMLDivElement>(null);
@@ -298,13 +330,26 @@ export function ImagePreviewDialog({
         : [],
     [currentImageKey, masks, showingMaskImage],
   );
-  const visibleHoveredMaskId = visibleMasks.some((mask) => mask.id === hoveredMaskId)
+  const visibleHoveredMaskId = visibleMasks.some(
+    (mask) => mask.id === hoveredMaskId && !hiddenMaskIds.includes(mask.id),
+  )
     ? hoveredMaskId
     : null;
-  const visibleSelectedMaskId = visibleMasks.some((mask) => mask.id === selectedMaskId)
+  const visibleEyeHoveredMaskId = visibleMasks.some(
+    (mask) => mask.id === eyeHoveredMaskId && !hiddenMaskIds.includes(mask.id),
+  )
+    ? eyeHoveredMaskId
+    : null;
+  const visibleSelectedMaskId = visibleMasks.some(
+    (mask) => mask.id === selectedMaskId && !hiddenMaskIds.includes(mask.id),
+  )
     ? selectedMaskId
     : null;
-  const activeMaskId = visibleHoveredMaskId ?? visibleSelectedMaskId;
+  const activeMaskId = visibleEyeHoveredMaskId ?? visibleHoveredMaskId ?? visibleSelectedMaskId;
+  const renderedMasks = useMemo(
+    () => visibleMasks.filter((mask) => !hiddenMaskIds.includes(mask.id)),
+    [hiddenMaskIds, visibleMasks],
+  );
   const duplicateName = visibleMasks.some(
     (mask) => mask.name.trim().toLocaleLowerCase() === maskName.trim().toLocaleLowerCase(),
   );
@@ -343,10 +388,10 @@ export function ImagePreviewDialog({
     context.clearRect(0, 0, canvas.width, canvas.height);
     const orderedMasks = activeMaskId
       ? [
-          ...visibleMasks.filter((mask) => mask.id !== activeMaskId),
-          ...visibleMasks.filter((mask) => mask.id === activeMaskId),
+          ...renderedMasks.filter((mask) => mask.id !== activeMaskId),
+          ...renderedMasks.filter((mask) => mask.id === activeMaskId),
         ]
-      : visibleMasks;
+      : renderedMasks;
 
     if (pixelSource) {
       const overlay = context.createImageData(pixelSource.width, pixelSource.height);
@@ -354,9 +399,11 @@ export function ImagePreviewDialog({
         const color =
           activeMaskId === null
             ? ([250, 204, 21, 112] as const)
-            : mask.id === activeMaskId
-              ? ([34, 211, 238, 210] as const)
-              : ([250, 204, 21, 34] as const);
+            : mask.id === visibleEyeHoveredMaskId
+              ? ([6, 182, 212, 245] as const)
+              : mask.id === activeMaskId
+                ? ([34, 211, 238, 210] as const)
+                : ([250, 204, 21, 34] as const);
         if ((mask.colorSelections?.length ?? 0) > 0) {
           const selected = selectedColorPixelsForMask(pixelSource, mask, visibleMaskLookup);
           applySelectionPixels(overlay, selected, color);
@@ -377,6 +424,7 @@ export function ImagePreviewDialog({
 
     for (const mask of orderedMasks) {
       const isActive = mask.id === activeMaskId;
+      const isEyeHovered = mask.id === visibleEyeHoveredMaskId;
       const isDimmed = activeMaskId !== null && !isActive;
       for (const stroke of mask.strokes) {
         drawStroke(
@@ -384,12 +432,16 @@ export function ImagePreviewDialog({
           stroke,
           imageSize.width,
           imageSize.height,
-          isActive
+          isEyeHovered
+            ? "rgb(6 182 212 / 1)"
+            : isActive
             ? "rgb(34 211 238 / 1)"
             : isDimmed
               ? "rgb(250 204 21 / 0.25)"
               : "rgb(250 204 21 / 0.8)",
-          isActive
+          isEyeHovered
+            ? "rgb(6 182 212 / 0.72)"
+            : isActive
             ? "rgb(34 211 238 / 0.55)"
             : isDimmed
               ? "rgb(250 204 21 / 0.08)"
@@ -414,8 +466,9 @@ export function ImagePreviewDialog({
     draftStrokes,
     imageSize,
     pixelSource,
+    renderedMasks,
     visibleMaskLookup,
-    visibleMasks,
+    visibleEyeHoveredMaskId,
   ]);
 
   useEffect(() => {
@@ -477,7 +530,6 @@ export function ImagePreviewDialog({
 
   const handleWheel = useCallback(
     (event: WheelEvent<HTMLDivElement>) => {
-      if (maskMode) return;
       event.preventDefault();
       const direction = event.deltaY < 0 ? 1 : -1;
       setZoom((current) => {
@@ -486,13 +538,16 @@ export function ImagePreviewDialog({
         return nextZoom;
       });
     },
-    [maskMode],
+    [],
   );
 
   const handlePointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
-      if (maskMode || zoom <= MIN_ZOOM) return;
       if (event.target instanceof Element && event.target.closest("button")) return;
+      const target = event.target instanceof Element ? event.target : null;
+      const onMaskFrame = Boolean(target?.closest("[data-mask-frame='true']"));
+      const canPanInMaskMode = maskMode && (!onMaskFrame || event.altKey || event.button === 1);
+      if (zoom <= MIN_ZOOM || (maskMode && !canPanInMaskMode)) return;
       event.preventDefault();
       event.currentTarget.setPointerCapture?.(event.pointerId);
       dragRef.current = {
@@ -536,6 +591,7 @@ export function ImagePreviewDialog({
     setDraftStrokes([]);
     setDraftColorSelections([]);
     setDraftExcludedMaskIds([]);
+    setSampledColor(null);
     setPixelError(null);
     drawRef.current = null;
   }, []);
@@ -565,9 +621,11 @@ export function ImagePreviewDialog({
   const handleDrawPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
       if (!maskMode) return;
+      if (event.altKey || event.button === 1) return;
       const point = pointFromPointer(event);
       if (!point) return;
       event.preventDefault();
+      if (pixelSource) setSampledColor(samplePixelColor(pixelSource, point));
 
       if (maskTool === "color") {
         if (!pixelSource) {
@@ -680,6 +738,12 @@ export function ImagePreviewDialog({
     );
   }
 
+  function toggleMaskVisibility(maskId: string) {
+    setHiddenMaskIds((current) =>
+      current.includes(maskId) ? current.filter((id) => id !== maskId) : [...current, maskId],
+    );
+  }
+
   const handleKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLDivElement>) => {
       if (event.key === "ArrowLeft" && hasPrevious && !maskMode) {
@@ -721,14 +785,14 @@ export function ImagePreviewDialog({
         <div
           className={cn(
             "relative flex min-h-0 flex-1 touch-none items-center justify-center overflow-hidden",
-            maskMode
+            isPanning
+              ? "cursor-grabbing"
+              : maskMode
               ? maskTool === "pen"
                 ? "cursor-crosshair"
                 : "cursor-cell"
               : zoom > MIN_ZOOM
-                ? isPanning
-                  ? "cursor-grabbing"
-                  : "cursor-grab"
+                ? "cursor-grab"
                 : "cursor-default",
           )}
           onWheel={handleWheel}
@@ -752,7 +816,9 @@ export function ImagePreviewDialog({
           ) : null}
           <div
             ref={imageFrameRef}
+            data-mask-frame="true"
             className="relative inline-block max-h-full max-w-full leading-none"
+            style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
             onPointerDown={handleDrawPointerDown}
             onPointerMove={handleDrawPointerMove}
             onPointerUp={stopDrawing}
@@ -765,16 +831,14 @@ export function ImagePreviewDialog({
               alt={currentItem.alt}
               draggable={false}
               onLoad={handleImageLoad}
-              className="block max-h-[calc(100dvh-8rem)] max-w-full object-contain transition-transform duration-100 ease-out select-none"
-              style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
+              className="block max-h-[calc(100dvh-8rem)] max-w-full object-contain select-none"
             />
             <canvas
               ref={overlayCanvasRef}
-              className="pointer-events-none absolute top-0 left-0 transition-transform duration-100 ease-out"
+              className="pointer-events-none absolute top-0 left-0"
               style={{
                 width: imageDisplaySize ? `${imageDisplaySize.width}px` : "100%",
                 height: imageDisplaySize ? `${imageDisplaySize.height}px` : "100%",
-                transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
               }}
               aria-hidden="true"
             />
@@ -848,30 +912,55 @@ export function ImagePreviewDialog({
                   </div>
 
                   {maskTool === "pen" ? (
-                    <div className="grid grid-cols-[1fr_44px] items-center gap-2">
-                      <div className="grid gap-1">
-                        <Label htmlFor={`${inputId}-thickness`} className="text-xs text-white/80">
-                          Thickness {strokeThickness}px
-                        </Label>
-                        <input
-                          id={`${inputId}-thickness`}
-                          type="range"
-                          min={MIN_MASK_BRUSH_THICKNESS}
-                          max={MAX_MASK_BRUSH_THICKNESS}
-                          value={strokeThickness}
-                          onChange={(event) =>
-                            setStrokeThickness(clampMaskBrushThickness(Number(event.target.value)))
-                          }
-                          className="w-full"
-                        />
+                    <div className="grid gap-2">
+                      <div className="grid grid-cols-[1fr_44px] items-center gap-2">
+                        <div className="grid gap-1">
+                          <Label htmlFor={`${inputId}-thickness`} className="text-xs text-white/80">
+                            Thickness {strokeThickness}px
+                          </Label>
+                          <input
+                            id={`${inputId}-thickness`}
+                            type="range"
+                            min={MIN_MASK_BRUSH_THICKNESS}
+                            max={MAX_MASK_BRUSH_THICKNESS}
+                            value={strokeThickness}
+                            onChange={(event) =>
+                              setStrokeThickness(
+                                clampMaskBrushThickness(Number(event.target.value)),
+                              )
+                            }
+                            className="w-full"
+                          />
+                        </div>
+                        <svg
+                          viewBox="0 0 160 160"
+                          className="size-11 rounded-md bg-white/10 p-1"
+                          aria-label={`${strokeThickness} pixel brush preview`}
+                        >
+                          <circle cx="80" cy="80" r={strokeThickness / 2} fill="rgb(96 165 250)" />
+                        </svg>
                       </div>
-                      <svg
-                        viewBox="0 0 160 160"
-                        className="size-11 rounded-md bg-white/10 p-1"
-                        aria-label={`${strokeThickness} pixel brush preview`}
-                      >
-                        <circle cx="80" cy="80" r={strokeThickness / 2} fill="rgb(96 165 250)" />
-                      </svg>
+                      {sampledColor ? (
+                        <div className="grid grid-cols-[32px_1fr] items-center gap-2 rounded-md bg-white/10 p-2">
+                          <span
+                            className="size-8 rounded border border-white/35"
+                            style={{ backgroundColor: sampledColor.hex }}
+                            aria-label={`Sampled color ${sampledColor.hex}`}
+                          />
+                          <span className="grid min-w-0 gap-0.5 text-xs">
+                            <span className="font-mono font-semibold text-white">
+                              {sampledColor.hex}
+                            </span>
+                            <span className="text-white/70">
+                              RGB {sampledColor.rgb.join(", ")} · Alpha {sampledColor.alpha}
+                            </span>
+                          </span>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-white/65">
+                          Click the image to sample the color under the pen.
+                        </p>
+                      )}
                     </div>
                   ) : (
                     <div className="grid gap-2">
@@ -935,6 +1024,7 @@ export function ImagePreviewDialog({
                 <div className="grid gap-1 border-t border-white/15 pt-2">
                   {visibleMasks.map((mask) => {
                     const excluded = draftExcludedMaskIds.includes(mask.id);
+                    const hidden = hiddenMaskIds.includes(mask.id);
                     return (
                       <div
                         key={mask.id}
@@ -960,6 +1050,24 @@ export function ImagePreviewDialog({
                           }
                         >
                           {mask.name}
+                        </button>
+                        <button
+                          type="button"
+                          aria-pressed={!hidden}
+                          className={cn(
+                            "rounded p-1 text-white/70 hover:bg-cyan-300/20 hover:text-cyan-100 focus-visible:ring-2 focus-visible:ring-cyan-300",
+                            !hidden && "text-cyan-100",
+                            visibleEyeHoveredMaskId === mask.id && "bg-cyan-300/25 text-cyan-50",
+                          )}
+                          aria-label={`${hidden ? "Show" : "Hide"} ${mask.name} mask`}
+                          title={`${hidden ? "Show" : "Hide"} ${mask.name} mask`}
+                          onPointerEnter={() => setEyeHoveredMaskId(mask.id)}
+                          onPointerLeave={() => setEyeHoveredMaskId(null)}
+                          onFocus={() => setEyeHoveredMaskId(mask.id)}
+                          onBlur={() => setEyeHoveredMaskId(null)}
+                          onClick={() => toggleMaskVisibility(mask.id)}
+                        >
+                          {hidden ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
                         </button>
                         <button
                           type="button"
