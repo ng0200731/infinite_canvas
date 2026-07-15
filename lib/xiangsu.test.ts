@@ -218,21 +218,19 @@ describe("Xiangsu image generator", () => {
     ).rejects.toThrow("provider connection failed");
   });
 
-  it("times out aborted provider requests", async () => {
-    const fetcher = vi.fn<typeof fetch>((_url, init) => {
-      return new Promise((_resolve, reject) => {
-        init?.signal?.addEventListener("abort", () => {
-          reject(new DOMException("Aborted", "AbortError"));
-        });
-      });
-    });
-    const generate = createXiangsuImageGenerator({
-      apiKey: "secret",
-      fetcher,
-      timeoutMs: 1,
-    });
+  it("does not impose a client-side timeout", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(
+      async () =>
+        await new Promise((resolve) =>
+          setTimeout(
+            () => resolve(Response.json({ data: [{ b64_json: "aW1hZ2U=" }] })),
+            20,
+          ),
+        ),
+    );
+    const generate = createXiangsuImageGenerator({ apiKey: "secret", fetcher });
 
-    await expect(generate(input)).rejects.toThrow("timed out");
+    await expect(generate(input)).resolves.toMatchObject({ model: "gpt-image-2" });
   });
 
   it("forwards caller cancellation to the provider request", async () => {
@@ -246,7 +244,6 @@ describe("Xiangsu image generator", () => {
     const generate = createXiangsuImageGenerator({
       apiKey: "secret",
       fetcher,
-      timeoutMs: 60_000,
     });
     const controller = new AbortController();
 

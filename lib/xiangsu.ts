@@ -20,7 +20,6 @@ import { compileReferencePrompt } from "@/lib/reference-prompt";
 const XIANGSU_GENERATION_URL = "https://www.xiangsuai.cn/v1/images/generations";
 const XIANGSU_EDIT_URL = "https://www.xiangsuai.cn/v1/images/edits";
 const XIANGSU_GEMINI_BASE_URL = "https://www.xiangsuai.cn/v1beta/models";
-const DEFAULT_TIMEOUT_MS = 120_000;
 
 const providerImageSchema = z
   .object({
@@ -85,7 +84,6 @@ export interface XiangsuGenerateOutput {
 interface XiangsuGeneratorOptions {
   apiKey: string | undefined;
   fetcher?: typeof fetch;
-  timeoutMs?: number;
 }
 
 function providerErrorMessage(payload: unknown): string | null {
@@ -208,7 +206,6 @@ async function appendEditImages(
 export function createXiangsuImageGenerator({
   apiKey,
   fetcher = fetch,
-  timeoutMs = DEFAULT_TIMEOUT_MS,
 }: XiangsuGeneratorOptions) {
   return async function generateImage(
     input: XiangsuGenerateInput,
@@ -223,7 +220,6 @@ export function createXiangsuImageGenerator({
     }
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     const abortFromRequest = () => controller.abort(requestSignal?.reason);
     if (requestSignal?.aborted) {
       abortFromRequest();
@@ -350,7 +346,7 @@ export function createXiangsuImageGenerator({
             ? requestSignal.reason
             : new DOMException("Generation cancelled", "AbortError");
         }
-        throw new Error("Image generation timed out. Please try again.");
+        throw new Error("Image generation was aborted. Please try again.");
       }
       if (isNetworkFetchError(error)) {
         throw new Error(
@@ -359,7 +355,6 @@ export function createXiangsuImageGenerator({
       }
       throw error;
     } finally {
-      clearTimeout(timeout);
       requestSignal?.removeEventListener("abort", abortFromRequest);
     }
   };
