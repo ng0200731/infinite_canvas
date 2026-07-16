@@ -523,7 +523,7 @@ function AliasMentionTextarea({
         value={value}
         disabled={disabled}
         placeholder="Describe the image... use @ to mention connected aliases"
-        className="nodrag nopan caret-foreground placeholder:text-muted-foreground relative z-10 block min-h-28 w-full resize-y rounded-md border-0 bg-transparent p-2 text-sm leading-5 text-transparent outline-none selection:bg-yellow-300/40 disabled:cursor-not-allowed disabled:opacity-50"
+        className="nodrag nopan caret-foreground placeholder:text-muted-foreground relative z-10 block min-h-28 w-full resize-none rounded-md border-0 bg-transparent p-2 text-sm leading-5 text-transparent outline-none selection:bg-yellow-300/40 disabled:cursor-not-allowed disabled:opacity-50"
         onChange={(event) => {
           selectionRef.current = {
             start: event.currentTarget.selectionStart,

@@ -1616,6 +1616,7 @@ function Editor({
           // Prefer the stored size (no measurement lag) over `measured`.
           const oldW = (n.data.width as number | undefined) ?? n.measured?.width ?? width;
           const oldH = (n.data.height as number | undefined) ?? n.measured?.height ?? height;
+          if (oldW === width && oldH === height) return n;
           const topLeftX = n.position.x - oldW / 2;
           const topLeftY = n.position.y - oldH / 2;
           return {

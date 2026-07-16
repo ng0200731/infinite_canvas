@@ -35,19 +35,40 @@ export function ResizeHandle({
     const startW = width;
     const startH = height;
     const origin = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+    let frame: number | null = null;
+    let pendingSize: { width: number; height: number } | null = null;
+    let lastApplied = { width: startW, height: startH };
+
+    const flushResize = () => {
+      frame = null;
+      if (!pendingSize) return;
+      const next = pendingSize;
+      pendingSize = null;
+      if (next.width === lastApplied.width && next.height === lastApplied.height) return;
+      lastApplied = next;
+      resizeNode(nodeId, next.width, next.height);
+    };
 
     const onMove = (ev: PointerEvent) => {
       const cur = screenToFlowPosition({ x: ev.clientX, y: ev.clientY });
       const nextW = Math.max(minWidth, Math.round(startW + (cur.x - origin.x)));
       const nextH = Math.max(minHeight, Math.round(startH + (cur.y - origin.y)));
-      resizeNode(nodeId, nextW, nextH);
+      pendingSize = { width: nextW, height: nextH };
+      frame ??= window.requestAnimationFrame(flushResize);
     };
     const onUp = () => {
+      if (frame !== null) {
+        window.cancelAnimationFrame(frame);
+        frame = null;
+      }
+      flushResize();
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
   }
 
   return (
